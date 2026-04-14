@@ -16,6 +16,7 @@ def tmp_project(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def sample_config() -> dict:
+    """Legacy config format using browser/server (tests backward compat)."""
     return {
         "project": {
             "name": "test-project",
@@ -31,6 +32,25 @@ def sample_config() -> dict:
             "stop_signal": "SIGTERM",
         },
         "browser": {"base_url": "http://localhost:3000"},
+        "limits": {"max_review_retries": 3, "max_acceptance_retries": 2},
+    }
+
+
+@pytest.fixture
+def cli_sample_config() -> dict:
+    """New config format using verification (CLI project)."""
+    return {
+        "project": {
+            "name": "test-cli",
+            "path": "/tmp/test-cli",
+            "description": "A CLI tool",
+        },
+        "goals": ["Add feature"],
+        "verification": {
+            "type": "cli",
+            "test_command": "python -m pytest tests/ -v",
+            "run_examples": ["test-cli --help"],
+        },
         "limits": {"max_review_retries": 3, "max_acceptance_retries": 2},
     }
 

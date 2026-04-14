@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Optional
 import yaml
 
 
@@ -31,11 +32,20 @@ class LimitsConfig:
 
 
 @dataclass
+class VerificationConfig:
+    type: str                        # "web" | "cli" | "library"
+    base_url: str = ""               # web only
+    test_command: str = ""           # cli/library
+    run_examples: list[str] = field(default_factory=list)  # cli
+
+
+@dataclass
 class AiLoopConfig:
     project: ProjectConfig
     goals: list[str]
-    server: ServerConfig
-    browser: BrowserConfig
+    verification: VerificationConfig
+    server: Optional[ServerConfig] = None
+    browser: Optional[BrowserConfig] = None
     limits: LimitsConfig = field(default_factory=LimitsConfig)
 
 
@@ -56,11 +66,36 @@ def load_config(path: Path) -> AiLoopConfig:
     proj = raw.get("project", {})
     _require(proj, "name", "path", context="project")
 
-    srv = raw.get("server", {})
-    _require(srv, "start_command", "health_url", context="server")
+    # Parse server (optional)
+    srv_raw = raw.get("server")
+    server = None
+    if srv_raw:
+        _require(srv_raw, "start_command", "health_url", context="server")
+        server = ServerConfig(
+            start_command=srv_raw["start_command"],
+            health_url=srv_raw["health_url"],
+            start_cwd=srv_raw.get("start_cwd", "."),
+            health_timeout=srv_raw.get("health_timeout", 30),
+            stop_signal=srv_raw.get("stop_signal", "SIGTERM"),
+        )
 
-    brw = raw.get("browser", {})
-    _require(brw, "base_url", context="browser")
+    # Parse verification (new) or fallback to browser (backward compat)
+    ver_raw = raw.get("verification")
+    brw_raw = raw.get("browser")
+    browser = None
+
+    if ver_raw:
+        verification = VerificationConfig(
+            type=ver_raw["type"],
+            base_url=ver_raw.get("base_url", ""),
+            test_command=ver_raw.get("test_command", ""),
+            run_examples=ver_raw.get("run_examples", []),
+        )
+    elif brw_raw and brw_raw.get("base_url"):
+        browser = BrowserConfig(base_url=brw_raw["base_url"])
+        verification = VerificationConfig(type="web", base_url=brw_raw["base_url"])
+    else:
+        raise ValueError("Missing required config: either 'verification' or 'browser.base_url' must be provided")
 
     lim = raw.get("limits", {})
 
@@ -71,14 +106,9 @@ def load_config(path: Path) -> AiLoopConfig:
             description=proj.get("description", ""),
         ),
         goals=raw.get("goals", []),
-        server=ServerConfig(
-            start_command=srv["start_command"],
-            health_url=srv["health_url"],
-            start_cwd=srv.get("start_cwd", "."),
-            health_timeout=srv.get("health_timeout", 30),
-            stop_signal=srv.get("stop_signal", "SIGTERM"),
-        ),
-        browser=BrowserConfig(base_url=brw["base_url"]),
+        verification=verification,
+        server=server,
+        browser=browser,
         limits=LimitsConfig(
             max_review_retries=lim.get("max_review_retries", 3),
             max_acceptance_retries=lim.get("max_acceptance_retries", 2),
