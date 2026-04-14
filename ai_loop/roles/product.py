@@ -1,0 +1,80 @@
+class ProductRole:
+    def __init__(self, base_url: str):
+        self.base_url = base_url
+
+    def build_prompt(self, phase: str, round_num: int, round_dir: str, goals: list[str]) -> str:
+        goals_text = "\n".join(f"- {g}" for g in goals)
+        builders = {
+            "explore": self._explore_prompt,
+            "clarify": self._clarify_prompt,
+            "acceptance": self._acceptance_prompt,
+        }
+        builder = builders.get(phase)
+        if builder is None:
+            raise ValueError(f"Unknown product phase: {phase}")
+        return builder(round_num, round_dir, goals_text)
+
+    def _explore_prompt(self, round_num, round_dir, goals_text):
+        return f"""你是产品经理。你的任务是体验当前产品并提出改进需求。
+
+当前目标：
+{goals_text}
+
+工作步骤：
+1. 阅读项目代码，理解当前功能和架构
+2. 编写 Playwright Python 脚本访问 {self.base_url}，像真实用户一样走完主要流程
+3. 截图保存到当前工作区的 notes/ 目录
+4. 结合代码理解和实际体验，输出需求文档
+
+输出文件：{round_dir}/requirement.md
+
+文件头部必须包含 YAML frontmatter：
+---
+round: {round_num}
+role: product
+phase: requirement
+result: null
+timestamp: （当前时间 ISO 格式）
+---
+
+需求要具体可执行，避免模糊描述。每条需求说清楚"现状是什么"和"期望是什么"。"""
+
+    def _clarify_prompt(self, round_num, round_dir, goals_text):
+        return f"""你是产品经理。开发者在设计文档中提出了待确认问题，请你回答。
+
+请阅读：{round_dir}/design.md，找到"待确认问题"章节。
+
+基于你对产品和用户的理解，逐一回答每个问题。
+如果某个问题涉及产品方向性决策且你不确定，标注为 NEEDS_HUMAN。
+
+输出文件：{round_dir}/clarification.md
+
+文件头部：
+---
+round: {round_num}
+role: product
+phase: clarification
+result: null
+timestamp: （当前时间 ISO 格式）
+---"""
+
+    def _acceptance_prompt(self, round_num, round_dir, goals_text):
+        return f"""你是产品经理。你的任务是验收本轮开发成果。
+
+1. 阅读本轮需求：{round_dir}/requirement.md
+2. 编写 Playwright Python 脚本访问 {self.base_url}，逐条验证需求是否被满足
+3. 截图保存到 notes/ 目录，用于对比
+4. 输出验收结果
+
+输出文件：{round_dir}/acceptance.md
+
+文件头部：
+---
+round: {round_num}
+role: product
+phase: acceptance
+result: PASS 或 FAIL
+timestamp: （当前时间 ISO 格式）
+---
+
+result 必须是 PASS 或 FAIL。如果 FAIL，逐条列出未通过的需求和原因。"""
