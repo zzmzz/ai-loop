@@ -21,13 +21,16 @@ def main():
 @main.command()
 @click.argument("project_path", type=click.Path(exists=True), default=".")
 @click.option("--name", default=None, help="Project name (auto-detected if omitted)")
+@click.option("--type", "project_type", type=click.Choice(["web", "cli", "library"]),
+              default="web", help="Project type (determines verification strategy)")
 @click.option("--start-command", default=None, help="Dev server start command")
 @click.option("--health-url", default=None, help="Health check URL")
 @click.option("--base-url", default=None, help="Browser base URL")
+@click.option("--test-command", default=None, help="Test command for CLI/library projects")
 @click.option("--goal", multiple=True, help="Initial goals (repeatable)")
 @click.option("--description", default=None, help="Project description")
 @click.option("--no-detect", is_flag=True, help="Skip auto-detection, prompt manually")
-def init(project_path, name, start_command, health_url, base_url, goal, description, no_detect):
+def init(project_path, name, project_type, start_command, health_url, base_url, test_command, goal, description, no_detect):
     """Initialize AI Loop for a target project."""
     project = Path(project_path).resolve()
     ai_dir = project / ".ai-loop"
@@ -35,26 +38,33 @@ def init(project_path, name, start_command, health_url, base_url, goal, descript
     if ai_dir.exists():
         raise click.ClickException(f".ai-loop 目录已存在: {ai_dir}")
 
-    # Auto-detect missing config via Claude Code
+    # Auto-detect missing config via Claude Code (only for web projects)
     detected = {}
-    needs_detect = not no_detect and any(
-        v is None for v in [name, start_command, health_url, base_url]
-    )
-    if needs_detect:
-        click.echo("正在分析项目，自动检测配置...")
-        try:
-            detected = detect_project_config(str(project))
-            click.echo("检测完成。")
-        except Exception as e:
-            click.echo(f"自动检测失败: {e}")
-            click.echo("将使用手动输入。")
+    if project_type == "web":
+        needs_detect = not no_detect and any(
+            v is None for v in [name, start_command, health_url, base_url]
+        )
+        if needs_detect:
+            click.echo("正在分析项目，自动检测配置...")
+            try:
+                detected = detect_project_config(str(project))
+                click.echo("检测完成。")
+            except Exception as e:
+                click.echo(f"自动检测失败: {e}")
+                click.echo("将使用手动输入。")
 
     # Use detected values as defaults, let user confirm/override
     name = name or detected.get("name") or click.prompt("项目名称")
     description = description if description is not None else detected.get("description", "")
-    start_command = start_command or detected.get("start_command") or click.prompt("Dev server 启动命令")
-    health_url = health_url or detected.get("health_url") or click.prompt("健康检查 URL")
-    base_url = base_url or detected.get("base_url") or health_url
+
+    if project_type == "web":
+        start_command = start_command or detected.get("start_command") or click.prompt("Dev server 启动命令")
+        health_url = health_url or detected.get("health_url") or click.prompt("健康检查 URL")
+        base_url = base_url or detected.get("base_url") or health_url
+    else:
+        # CLI or library project
+        test_command = test_command or click.prompt("测试命令")
+
     if not goal:
         detected_goals = detected.get("goals", [])
         goal = tuple(detected_goals) if detected_goals else ()
@@ -63,18 +73,24 @@ def init(project_path, name, start_command, health_url, base_url, goal, descript
     if detected:
         click.echo(f"\n  项目名称:    {name}")
         click.echo(f"  描述:        {description}")
-        click.echo(f"  启动命令:    {start_command}")
-        click.echo(f"  健康检查:    {health_url}")
-        click.echo(f"  浏览器 URL:  {base_url}")
+        if project_type == "web":
+            click.echo(f"  启动命令:    {start_command}")
+            click.echo(f"  健康检查:    {health_url}")
+            click.echo(f"  浏览器 URL:  {base_url}")
+        else:
+            click.echo(f"  测试命令:    {test_command}")
         if goal:
             click.echo(f"  目标:        {', '.join(goal)}")
         click.echo()
         if not click.confirm("以上配置是否正确？", default=True):
             name = click.prompt("项目名称", default=name)
             description = click.prompt("描述", default=description)
-            start_command = click.prompt("启动命令", default=start_command)
-            health_url = click.prompt("健康检查 URL", default=health_url)
-            base_url = click.prompt("浏览器 URL", default=base_url)
+            if project_type == "web":
+                start_command = click.prompt("启动命令", default=start_command)
+                health_url = click.prompt("健康检查 URL", default=health_url)
+                base_url = click.prompt("浏览器 URL", default=base_url)
+            else:
+                test_command = click.prompt("测试命令", default=test_command)
 
     # Create directory structure
     ai_dir.mkdir()
@@ -107,16 +123,29 @@ def init(project_path, name, start_command, health_url, base_url, goal, descript
             "description": description,
         },
         "goals": list(goal) if goal else [],
-        "server": {
+        "limits": {"max_review_retries": 3, "max_acceptance_retries": 2},
+    }
+
+    if project_type == "web":
+        config["server"] = {
             "start_command": start_command,
             "start_cwd": ".",
             "health_url": health_url,
             "health_timeout": 30,
             "stop_signal": "SIGTERM",
-        },
-        "browser": {"base_url": base_url},
-        "limits": {"max_review_retries": 3, "max_acceptance_retries": 2},
-    }
+        }
+        config["browser"] = {"base_url": base_url}
+        config["verification"] = {
+            "type": "web",
+            "base_url": base_url,
+        }
+    else:
+        # CLI or library project
+        config["verification"] = {
+            "type": project_type,
+            "test_command": test_command,
+            "run_examples": [],
+        }
     (ai_dir / "config.yaml").write_text(
         yaml.dump(config, allow_unicode=True, default_flow_style=False)
     )
