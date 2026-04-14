@@ -12,12 +12,13 @@ from ai_loop.roles.reviewer import ReviewerRole
 
 
 class Orchestrator:
-    def __init__(self, ai_loop_dir: Path):
+    def __init__(self, ai_loop_dir: Path, verbose: bool = False):
         self._dir = ai_loop_dir
         self._config = load_config(ai_loop_dir / "config.yaml")
         self._state_file = ai_loop_dir / "state.json"
         self._state = load_state(self._state_file)
         self._memory = MemoryManager()
+        self._verbose = verbose
 
         project_path = self._config.project.path
         self._server = DevServer(
@@ -126,6 +127,10 @@ class Orchestrator:
 
         return summary
 
+    def _log(self, msg: str) -> None:
+        if self._verbose:
+            print(msg, flush=True)
+
     def _call_role(self, role_phase: str, rnd: int, round_dir: Path, goals: list[str]) -> None:
         role_name, phase = role_phase.split(":", 1)
         role_map = {
@@ -134,18 +139,25 @@ class Orchestrator:
             "reviewer": self._reviewer,
         }
         role = role_map[role_name]
+        self._log(f"\n\033[1m▶ [{role_name.upper()}] {phase}\033[0m")
         prompt = role.build_prompt(phase, rnd, str(round_dir), goals)
         workspace = str(self._dir / "workspaces" / role_name)
-        self._runners[role_name].call(prompt, cwd=workspace)
+        self._runners[role_name].call(prompt, cwd=workspace, verbose=self._verbose)
 
     def _ask_brain(self, decision_point: str, round_dir: Path) -> BrainDecision:
-        return self._brain.decide(decision_point, round_dir=round_dir)
+        self._log(f"\n\033[2m🧠 Brain: {decision_point}\033[0m")
+        decision = self._brain.decide(decision_point, round_dir=round_dir)
+        self._log(f"\033[2m   → {decision.decision}: {decision.reason}\033[0m")
+        return decision
 
     def _server_start(self) -> None:
+        self._log("\033[2m🖥  Dev server 启动中...\033[0m")
         self._server.start()
+        self._log("\033[2m🖥  Dev server 已就绪\033[0m")
 
     def _server_stop(self) -> None:
         self._server.stop()
+        self._log("\033[2m🖥  Dev server 已停止\033[0m")
 
     def _escalate(self, context: str, reason: str) -> str:
         return f"ESCALATE:{context}:{reason}"

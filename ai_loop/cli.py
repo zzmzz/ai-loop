@@ -130,7 +130,9 @@ def init(project_path, name, start_command, health_url, base_url, goal, descript
 @main.command()
 @click.argument("project_path", type=click.Path(exists=True), default=".")
 @click.option("--goal", multiple=True, help="Additional goals for this run")
-def run(project_path, goal):
+@click.option("-v", "--verbose", is_flag=True, default=True, help="Show Claude Code processing details (default: on)")
+@click.option("-q", "--quiet", is_flag=True, help="Hide Claude Code processing details")
+def run(project_path, goal, verbose, quiet):
     """Run the AI Loop iteration cycle."""
     project = Path(project_path).resolve()
     ai_dir = project / ".ai-loop"
@@ -150,7 +152,8 @@ def run(project_path, goal):
             yaml.dump(config, allow_unicode=True, default_flow_style=False)
         )
 
-    orch = Orchestrator(ai_dir)
+    show_details = verbose and not quiet
+    orch = Orchestrator(ai_dir, verbose=show_details)
 
     while True:
         round_num = orch.current_round
