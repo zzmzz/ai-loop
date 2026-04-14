@@ -9,6 +9,7 @@ from ai_loop.roles.base import RoleRunner
 from ai_loop.roles.product import ProductRole
 from ai_loop.roles.developer import DeveloperRole
 from ai_loop.roles.reviewer import ReviewerRole
+from ai_loop.context import ContextCollector
 
 
 class Orchestrator:
@@ -19,21 +20,28 @@ class Orchestrator:
         self._state = load_state(self._state_file)
         self._memory = MemoryManager()
         self._verbose = verbose
+        self._context_collector = ContextCollector()
 
         project_path = self._config.project.path
-        self._server = DevServer(
-            start_command=self._config.server.start_command,
-            cwd=project_path,
-            health_url=self._config.server.health_url,
-            health_timeout=self._config.server.health_timeout,
-            stop_signal=self._config.server.stop_signal,
-            log_path=ai_loop_dir / "server.log",
-        )
+
+        # Server is optional (CLI/library projects don't need one)
+        if self._config.server:
+            self._server = DevServer(
+                start_command=self._config.server.start_command,
+                cwd=project_path,
+                health_url=self._config.server.health_url,
+                health_timeout=self._config.server.health_timeout,
+                stop_signal=self._config.server.stop_signal,
+                log_path=ai_loop_dir / "server.log",
+            )
+        else:
+            self._server = None
+
         self._brain = Brain(
             orchestrator_cwd=str(ai_loop_dir / "workspaces" / "orchestrator")
         )
 
-        self._product = ProductRole(base_url=self._config.browser.base_url)
+        self._product = ProductRole(verification=self._config.verification)
         self._developer = DeveloperRole()
         self._reviewer = ReviewerRole()
 
@@ -140,7 +148,8 @@ class Orchestrator:
         }
         role = role_map[role_name]
         self._log(f"\n\033[1m▶ [{role_name.upper()}] {phase}\033[0m")
-        prompt = role.build_prompt(phase, rnd, str(round_dir), goals)
+        context = self._context_collector.collect(role_phase, round_dir)
+        prompt = role.build_prompt(phase, rnd, str(round_dir), goals, context=context)
         workspace = str(self._dir / "workspaces" / role_name)
         self._runners[role_name].call(prompt, cwd=workspace, verbose=self._verbose)
 
@@ -151,11 +160,15 @@ class Orchestrator:
         return decision
 
     def _server_start(self) -> None:
+        if self._server is None:
+            return
         self._log("\033[2m🖥  Dev server 启动中...\033[0m")
         self._server.start()
         self._log("\033[2m🖥  Dev server 已就绪\033[0m")
 
     def _server_stop(self) -> None:
+        if self._server is None:
+            return
         self._server.stop()
         self._log("\033[2m🖥  Dev server 已停止\033[0m")
 

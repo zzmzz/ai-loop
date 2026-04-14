@@ -77,3 +77,30 @@ def ai_loop_dir(tmp_project: Path, sample_config: dict) -> Path:
         if role != "orchestrator":
             (ws / "notes").mkdir()
     return ai_dir
+
+
+@pytest.fixture
+def cli_ai_loop_dir(tmp_path: Path, cli_sample_config: dict) -> Path:
+    """Create a .ai-loop directory for a CLI project (no server)."""
+    project = tmp_path / "test-cli"
+    project.mkdir()
+    ai_dir = project / ".ai-loop"
+    ai_dir.mkdir()
+    cli_sample_config["project"]["path"] = str(project)
+    (ai_dir / "config.yaml").write_text(yaml.dump(cli_sample_config))
+    (ai_dir / "state.json").write_text(json.dumps({
+        "current_round": 1,
+        "phase": "idle",
+        "retry_counts": {"review": 0, "acceptance": 0},
+        "history": [],
+    }))
+    (ai_dir / "rounds").mkdir()
+    (ai_dir / "rounds" / "001").mkdir()
+    workspaces = ai_dir / "workspaces"
+    for role in ("orchestrator", "product", "developer", "reviewer"):
+        ws = workspaces / role
+        ws.mkdir(parents=True)
+        (ws / "CLAUDE.md").write_text(f"# Role: {role}\n")
+        if role != "orchestrator":
+            (ws / "notes").mkdir()
+    return ai_dir

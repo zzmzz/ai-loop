@@ -82,3 +82,30 @@ class TestOrchestrator:
         # Developer fix_review should have been called twice
         role_calls = [c[0][0] for c in mock_role.call_args_list]
         assert role_calls.count("developer:fix_review") == 2
+
+
+@pytest.fixture
+def cli_orch(cli_ai_loop_dir: Path) -> Orchestrator:
+    return Orchestrator(cli_ai_loop_dir)
+
+
+class TestOrchestratorCliProject:
+    @patch.object(Orchestrator, "_call_role")
+    @patch.object(Orchestrator, "_ask_brain")
+    def test_server_not_started_for_cli_project(
+        self, mock_brain, mock_role, cli_orch: Orchestrator
+    ):
+        def brain_side_effect(point, **kwargs):
+            if point == "post_acceptance":
+                return BrainDecision(decision="PASS", reason="ok")
+            if point == "post_review":
+                return BrainDecision(decision="APPROVE", reason="ok")
+            if point == "round_summary":
+                return BrainDecision(decision="PASS", reason="ok", details="Done")
+            return BrainDecision(decision="PROCEED", reason="ok")
+
+        mock_brain.side_effect = brain_side_effect
+        mock_role.return_value = None
+
+        summary = cli_orch.run_single_round()
+        assert summary is not None
