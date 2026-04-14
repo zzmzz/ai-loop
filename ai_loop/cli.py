@@ -19,7 +19,7 @@ def main():
 
 
 @main.command()
-@click.argument("project_path", type=click.Path(exists=True))
+@click.argument("project_path", type=click.Path(exists=True), default=".")
 @click.option("--name", default=None, help="Project name (auto-detected if omitted)")
 @click.option("--start-command", default=None, help="Dev server start command")
 @click.option("--health-url", default=None, help="Health check URL")
@@ -128,7 +128,7 @@ def init(project_path, name, start_command, health_url, base_url, goal, descript
 
 
 @main.command()
-@click.argument("project_path", type=click.Path(exists=True))
+@click.argument("project_path", type=click.Path(exists=True), default=".")
 @click.option("--goal", multiple=True, help="Additional goals for this run")
 def run(project_path, goal):
     """Run the AI Loop iteration cycle."""
