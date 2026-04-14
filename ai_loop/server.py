@@ -2,6 +2,7 @@ import signal
 import subprocess
 import time
 from pathlib import Path
+from typing import Optional
 import requests
 
 
@@ -13,7 +14,7 @@ class DevServer:
         health_url: str,
         health_timeout: int = 30,
         stop_signal: str = "SIGTERM",
-        log_path: Path | None = None,
+        log_path: Optional[Path] = None,
     ):
         self._start_command = start_command
         self._cwd = cwd
@@ -21,7 +22,7 @@ class DevServer:
         self._health_timeout = health_timeout
         self._stop_signal = getattr(signal, stop_signal, signal.SIGTERM)
         self._log_path = log_path
-        self._process: subprocess.Popen | None = None
+        self._process: Optional[subprocess.Popen] = None
         self._log_fh = None
 
     def start(self) -> None:
