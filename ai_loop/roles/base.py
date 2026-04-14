@@ -133,7 +133,7 @@ class RoleRunner:
 
         elif etype == "user":
             tool_result = event.get("tool_use_result", {})
-            if tool_result:
+            if tool_result and isinstance(tool_result, dict):
                 stdout = tool_result.get("stdout", "")
                 stderr = tool_result.get("stderr", "")
                 output = stdout or stderr
