@@ -6,6 +6,7 @@ import shutil
 import click
 import yaml
 
+from ai_loop.detect import detect_project_config
 from ai_loop.orchestrator import Orchestrator
 from ai_loop.state import LoopState, save_state
 import ai_loop.templates
@@ -19,19 +20,61 @@ def main():
 
 @main.command()
 @click.argument("project_path", type=click.Path(exists=True))
-@click.option("--name", prompt="项目名称", help="Project name")
-@click.option("--start-command", prompt="Dev server 启动命令", help="e.g. npm start")
-@click.option("--health-url", prompt="健康检查 URL", help="e.g. http://localhost:3000")
-@click.option("--base-url", prompt="浏览器访问 URL", help="e.g. http://localhost:3000")
+@click.option("--name", default=None, help="Project name (auto-detected if omitted)")
+@click.option("--start-command", default=None, help="Dev server start command")
+@click.option("--health-url", default=None, help="Health check URL")
+@click.option("--base-url", default=None, help="Browser base URL")
 @click.option("--goal", multiple=True, help="Initial goals (repeatable)")
-@click.option("--description", default="", help="Project description")
-def init(project_path, name, start_command, health_url, base_url, goal, description):
+@click.option("--description", default=None, help="Project description")
+@click.option("--no-detect", is_flag=True, help="Skip auto-detection, prompt manually")
+def init(project_path, name, start_command, health_url, base_url, goal, description, no_detect):
     """Initialize AI Loop for a target project."""
     project = Path(project_path).resolve()
     ai_dir = project / ".ai-loop"
 
     if ai_dir.exists():
         raise click.ClickException(f".ai-loop 目录已存在: {ai_dir}")
+
+    # Auto-detect missing config via Claude Code
+    detected = {}
+    needs_detect = not no_detect and any(
+        v is None for v in [name, start_command, health_url, base_url]
+    )
+    if needs_detect:
+        click.echo("正在分析项目，自动检测配置...")
+        try:
+            detected = detect_project_config(str(project))
+            click.echo("检测完成。")
+        except Exception as e:
+            click.echo(f"自动检测失败: {e}")
+            click.echo("将使用手动输入。")
+
+    # Use detected values as defaults, let user confirm/override
+    name = name or detected.get("name") or click.prompt("项目名称")
+    description = description if description is not None else detected.get("description", "")
+    start_command = start_command or detected.get("start_command") or click.prompt("Dev server 启动命令")
+    health_url = health_url or detected.get("health_url") or click.prompt("健康检查 URL")
+    base_url = base_url or detected.get("base_url") or health_url
+    if not goal:
+        detected_goals = detected.get("goals", [])
+        goal = tuple(detected_goals) if detected_goals else ()
+
+    # Show detected config for confirmation
+    if detected:
+        click.echo(f"\n  项目名称:    {name}")
+        click.echo(f"  描述:        {description}")
+        click.echo(f"  启动命令:    {start_command}")
+        click.echo(f"  健康检查:    {health_url}")
+        click.echo(f"  浏览器 URL:  {base_url}")
+        if goal:
+            click.echo(f"  目标:        {', '.join(goal)}")
+        click.echo()
+        if not click.confirm("以上配置是否正确？", default=True):
+            name = click.prompt("项目名称", default=name)
+            description = click.prompt("描述", default=description)
+            start_command = click.prompt("启动命令", default=start_command)
+            health_url = click.prompt("健康检查 URL", default=health_url)
+            base_url = click.prompt("浏览器 URL", default=base_url)
 
     # Create directory structure
     ai_dir.mkdir()

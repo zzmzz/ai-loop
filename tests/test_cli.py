@@ -2,6 +2,7 @@
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 from click.testing import CliRunner
+import yaml
 import pytest
 from ai_loop.cli import main
 
@@ -39,6 +40,26 @@ class TestInitCommand:
         ])
         assert result.exit_code != 0
         assert "已存在" in result.output or "already exists" in result.output.lower()
+
+    @patch("ai_loop.cli.detect_project_config")
+    def test_init_auto_detect(self, mock_detect, tmp_project: Path):
+        mock_detect.return_value = {
+            "name": "my-app",
+            "description": "A cool app",
+            "start_command": "pnpm dev",
+            "health_url": "http://localhost:5173",
+            "base_url": "http://localhost:5173",
+            "goals": ["Improve performance"],
+        }
+        runner = CliRunner()
+        result = runner.invoke(main, ["init", str(tmp_project)], input="y\n")
+
+        assert result.exit_code == 0
+        mock_detect.assert_called_once()
+        config = yaml.safe_load((tmp_project / ".ai-loop" / "config.yaml").read_text())
+        assert config["project"]["name"] == "my-app"
+        assert config["server"]["start_command"] == "pnpm dev"
+        assert config["goals"] == ["Improve performance"]
 
 
 class TestRunCommand:
