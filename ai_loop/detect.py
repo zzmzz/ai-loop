@@ -31,7 +31,6 @@ def detect_project_config(project_path: str) -> dict:
     cmd = [
         "claude",
         "-p", DETECT_PROMPT,
-        "--cwd", project_path,
         "--allowedTools", "Read,Glob,Grep,Bash",
         "--output-format", "text",
     ]
@@ -40,6 +39,7 @@ def detect_project_config(project_path: str) -> dict:
         capture_output=True,
         text=True,
         timeout=120,
+        cwd=project_path,
     )
     if result.returncode != 0:
         raise RuntimeError(f"项目检测失败: {result.stderr[:500]}")

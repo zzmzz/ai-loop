@@ -26,7 +26,6 @@ class RoleRunner:
         cmd = [
             "claude",
             "-p", prompt,
-            "--cwd", cwd,
             "--allowedTools", ",".join(self.allowed_tools),
             "--output-format", "text",
         ]
@@ -35,6 +34,7 @@ class RoleRunner:
             capture_output=True,
             text=True,
             timeout=timeout,
+            cwd=cwd,
         )
         if result.returncode != 0:
             raise RuntimeError(
