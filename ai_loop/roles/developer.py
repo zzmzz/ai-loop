@@ -1,5 +1,6 @@
 class DeveloperRole:
-    def build_prompt(self, phase: str, round_num: int, round_dir: str, goals: list[str]) -> str:
+    def build_prompt(self, phase: str, round_num: int, round_dir: str,
+                     goals: list[str], context: str = "") -> str:
         goals_text = "\n".join(f"- {g}" for g in goals)
         builders = {
             "design": self._design_prompt,
@@ -10,7 +11,10 @@ class DeveloperRole:
         builder = builders.get(phase)
         if builder is None:
             raise ValueError(f"Unknown developer phase: {phase}")
-        return builder(round_num, round_dir, goals_text)
+        prompt = builder(round_num, round_dir, goals_text)
+        if context:
+            prompt += f"\n\n{context}"
+        return prompt
 
     def _design_prompt(self, round_num, round_dir, goals_text):
         return f"""你是开发者。当前阶段：技术设计。

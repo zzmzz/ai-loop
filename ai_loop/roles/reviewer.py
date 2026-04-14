@@ -1,9 +1,13 @@
 class ReviewerRole:
-    def build_prompt(self, phase: str, round_num: int, round_dir: str, goals: list[str]) -> str:
+    def build_prompt(self, phase: str, round_num: int, round_dir: str,
+                     goals: list[str], context: str = "") -> str:
         if phase != "review":
             raise ValueError(f"Unknown reviewer phase: {phase}")
         goals_text = "\n".join(f"- {g}" for g in goals)
-        return self._review_prompt(round_num, round_dir, goals_text)
+        prompt = self._review_prompt(round_num, round_dir, goals_text)
+        if context:
+            prompt += f"\n\n{context}"
+        return prompt
 
     def _review_prompt(self, round_num, round_dir, goals_text):
         return f"""你是高级工程师，执行代码审查。

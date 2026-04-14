@@ -188,6 +188,18 @@ class TestDeveloperRole:
         assert "review.md" in prompt
 
 
+class TestDeveloperRoleContext:
+    def test_context_appended_to_design_prompt(self):
+        role = DeveloperRole()
+        prompt = role.build_prompt(
+            "design", round_num=1, round_dir="/r/001",
+            goals=["Fix login"], context="## requirement.md\nFix the bug",
+        )
+        assert "## requirement.md" in prompt
+        assert "Fix the bug" in prompt
+        assert "design.md" in prompt  # original content still present
+
+
 class TestReviewerRole:
     def test_review_prompt(self):
         role = ReviewerRole()
@@ -197,3 +209,15 @@ class TestReviewerRole:
         assert "git diff" in prompt
         assert "APPROVE" in prompt
         assert "REQUEST_CHANGES" in prompt
+
+
+class TestReviewerRoleContext:
+    def test_context_appended_to_review_prompt(self):
+        role = ReviewerRole()
+        prompt = role.build_prompt(
+            "review", round_num=1, round_dir="/r/001",
+            goals=["Fix login"], context="## requirement.md\nThe requirement",
+        )
+        assert "## requirement.md" in prompt
+        assert "The requirement" in prompt
+        assert "git diff" in prompt  # original content still present
