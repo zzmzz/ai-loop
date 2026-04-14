@@ -45,6 +45,7 @@ class TestRunCommand:
     @patch("ai_loop.cli.Orchestrator")
     def test_run_single_round_and_stop(self, MockOrch: MagicMock, ai_loop_dir: Path):
         mock_orch = MagicMock()
+        mock_orch.current_round = 1
         mock_orch.run_single_round.return_value = "Round completed successfully"
         MockOrch.return_value = mock_orch
 

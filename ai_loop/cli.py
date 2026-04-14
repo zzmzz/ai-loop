@@ -1,4 +1,5 @@
 # ai_loop/cli.py
+from importlib import resources
 from pathlib import Path
 import shutil
 
@@ -7,8 +8,7 @@ import yaml
 
 from ai_loop.orchestrator import Orchestrator
 from ai_loop.state import LoopState, save_state
-
-TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
+import ai_loop.templates
 
 
 @click.group()
@@ -48,10 +48,10 @@ def init(project_path, name, start_command, health_url, base_url, goal, descript
     for role_name, template_name in role_template_map.items():
         ws = workspaces / role_name
         ws.mkdir(parents=True)
-        template = TEMPLATES_DIR / template_name
-        if template.exists():
-            shutil.copy(template, ws / "CLAUDE.md")
-        else:
+        try:
+            ref = resources.files(ai_loop.templates).joinpath(template_name)
+            (ws / "CLAUDE.md").write_text(ref.read_text(encoding="utf-8"))
+        except (FileNotFoundError, TypeError):
             (ws / "CLAUDE.md").write_text(f"# Role: {role_name}\n\n## 累积记忆\n")
         if role_name != "orchestrator":
             (ws / "notes").mkdir()
@@ -110,25 +110,36 @@ def run(project_path, goal):
     orch = Orchestrator(ai_dir)
 
     while True:
+        round_num = orch.current_round
         click.echo(f"\n{'=' * 50}")
-        click.echo(f"  AI Loop - Round {orch._state.current_round} 开始")
+        click.echo(f"  AI Loop - Round {round_num} 开始")
         click.echo(f"{'=' * 50}\n")
 
         summary = orch.run_single_round()
 
         click.echo(f"\n{'=' * 50}")
-        click.echo(f"  AI Loop - Round {orch._state.current_round - 1} 完成")
+        click.echo(f"  AI Loop - Round {round_num} 完成")
         click.echo(f"{'=' * 50}")
         click.echo(f"  结果: {summary}")
         click.echo(f"  产出物: {ai_dir / 'rounds'}")
         click.echo(f"{'=' * 50}\n")
 
-        action = click.prompt(
-            "请选择",
-            type=click.Choice(["c", "g", "s"], case_sensitive=False),
-            default="c",
-            show_choices=True,
-        )
+        if summary.startswith("ESCALATE:"):
+            _, context, reason = summary.split(":", 2)
+            click.echo(f"  ⚠ 需要人类决策 [{context}]: {reason}\n")
+            action = click.prompt(
+                "请选择",
+                type=click.Choice(["c", "g", "s"], case_sensitive=False),
+                default="s",
+                show_choices=True,
+            )
+        else:
+            action = click.prompt(
+                "请选择",
+                type=click.Choice(["c", "g", "s"], case_sensitive=False),
+                default="c",
+                show_choices=True,
+            )
 
         if action == "s":
             click.echo("循环已停止。")
@@ -142,9 +153,8 @@ def run(project_path, goal):
             config_path.write_text(
                 yaml.dump(config, allow_unicode=True, default_flow_style=False)
             )
-            orch._config.goals.append(new_goal)
+            orch.add_goal(new_goal)
             click.echo(f"已添加目标: {new_goal}")
-        # action == "c" -> continue naturally
 
 
 if __name__ == "__main__":

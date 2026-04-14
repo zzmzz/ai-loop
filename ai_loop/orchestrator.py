@@ -42,6 +42,13 @@ class Orchestrator:
             "reviewer": RoleRunner("reviewer", ["Read", "Glob", "Grep", "Bash"]),
         }
 
+    @property
+    def current_round(self) -> int:
+        return self._state.current_round
+
+    def add_goal(self, goal: str) -> None:
+        self._config.goals.append(goal)
+
     def run_single_round(self) -> str:
         rnd = self._state.current_round
         round_dir = self._state.round_dir(self._dir)

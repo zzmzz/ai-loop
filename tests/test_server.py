@@ -43,7 +43,7 @@ class TestDevServer:
         server._process = mock_process
         server.stop()
 
-        mock_process.terminate.assert_called_once()
+        mock_process.send_signal.assert_called_once()
         mock_process.wait.assert_called_once_with(timeout=10)
 
     @patch("ai_loop.server.subprocess.Popen")

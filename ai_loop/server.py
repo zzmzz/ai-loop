@@ -1,3 +1,4 @@
+import signal
 import subprocess
 import time
 from pathlib import Path
@@ -18,20 +19,21 @@ class DevServer:
         self._cwd = cwd
         self._health_url = health_url
         self._health_timeout = health_timeout
-        self._stop_signal = stop_signal
+        self._stop_signal = getattr(signal, stop_signal, signal.SIGTERM)
         self._log_path = log_path
         self._process: subprocess.Popen | None = None
+        self._log_fh = None
 
     def start(self) -> None:
         if self.is_running():
             return
 
-        log_fh = open(self._log_path, "a") if self._log_path else subprocess.DEVNULL
+        self._log_fh = open(self._log_path, "a") if self._log_path else None
         self._process = subprocess.Popen(
             self._start_command,
             shell=True,
             cwd=self._cwd,
-            stdout=log_fh,
+            stdout=self._log_fh or subprocess.DEVNULL,
             stderr=subprocess.STDOUT,
         )
         self._wait_healthy()
@@ -59,13 +61,16 @@ class DevServer:
         if self._process is None:
             return
         try:
-            self._process.terminate()
+            self._process.send_signal(self._stop_signal)
             self._process.wait(timeout=10)
         except subprocess.TimeoutExpired:
             self._process.kill()
             self._process.wait(timeout=5)
         finally:
             self._process = None
+            if self._log_fh is not None:
+                self._log_fh.close()
+                self._log_fh = None
 
     def is_running(self) -> bool:
         return self._process is not None and self._process.poll() is None
