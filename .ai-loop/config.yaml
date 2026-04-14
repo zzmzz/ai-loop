@@ -1,0 +1,16 @@
+project:
+  name: ai-loop
+  path: .
+  description: AI-driven product iteration loop framework
+
+goals: []
+
+verification:
+  type: cli
+  test_command: "python -m pytest tests/ -v"
+  run_examples:
+    - "python -m ai_loop.cli init /tmp/ai-loop-test --name TestApp --type web --start-command 'echo ok' --health-url http://localhost:3000 --base-url http://localhost:3000 --no-detect"
+
+limits:
+  max_review_retries: 3
+  max_acceptance_retries: 2
