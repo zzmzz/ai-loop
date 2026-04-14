@@ -72,28 +72,99 @@ class TestRoleRunner:
 from ai_loop.roles.product import ProductRole
 from ai_loop.roles.developer import DeveloperRole
 from ai_loop.roles.reviewer import ReviewerRole
+from ai_loop.config import VerificationConfig
 
 
 class TestProductRole:
     def test_explore_prompt_includes_base_url(self):
-        role = ProductRole(base_url="http://localhost:3000")
+        verification = VerificationConfig(type="web", base_url="http://localhost:3000")
+        role = ProductRole(verification=verification)
         prompt = role.build_prompt("explore", round_num=1, round_dir="/r/001", goals=["Fix login"])
         assert "http://localhost:3000" in prompt
         assert "requirement.md" in prompt
         assert "Fix login" in prompt
 
     def test_acceptance_prompt_includes_requirement(self):
-        role = ProductRole(base_url="http://localhost:3000")
+        verification = VerificationConfig(type="web", base_url="http://localhost:3000")
+        role = ProductRole(verification=verification)
         prompt = role.build_prompt("acceptance", round_num=1, round_dir="/r/001", goals=["Fix login"])
         assert "requirement.md" in prompt
         assert "acceptance.md" in prompt
         assert "PASS" in prompt and "FAIL" in prompt
 
     def test_clarify_prompt(self):
-        role = ProductRole(base_url="http://localhost:3000")
+        verification = VerificationConfig(type="web", base_url="http://localhost:3000")
+        role = ProductRole(verification=verification)
         prompt = role.build_prompt("clarify", round_num=1, round_dir="/r/001", goals=["Fix login"])
         assert "design.md" in prompt
         assert "clarification.md" in prompt
+
+
+class TestProductRoleCli:
+    def test_explore_prompt_cli_uses_run_examples(self):
+        verification = VerificationConfig(
+            type="cli",
+            test_command="pytest tests/ -v",
+            run_examples=["my-cli --help", "my-cli init /tmp/test"],
+        )
+        role = ProductRole(verification=verification)
+        prompt = role.build_prompt("explore", round_num=1, round_dir="/r/001", goals=["Add feature"])
+
+        assert "my-cli --help" in prompt
+        assert "pytest tests/ -v" in prompt
+        assert "Playwright" not in prompt
+        assert "requirement.md" in prompt
+
+    def test_acceptance_prompt_cli_uses_test_command(self):
+        verification = VerificationConfig(
+            type="cli",
+            test_command="pytest tests/ -v",
+            run_examples=["my-cli --help"],
+        )
+        role = ProductRole(verification=verification)
+        prompt = role.build_prompt("acceptance", round_num=1, round_dir="/r/001", goals=["Add feature"])
+
+        assert "pytest tests/ -v" in prompt
+        assert "my-cli --help" in prompt
+        assert "Playwright" not in prompt
+        assert "PASS" in prompt and "FAIL" in prompt
+
+    def test_context_appended_to_prompt(self):
+        verification = VerificationConfig(type="cli", test_command="pytest")
+        role = ProductRole(verification=verification)
+        prompt = role.build_prompt(
+            "explore", round_num=1, round_dir="/r/001",
+            goals=["Add feature"], context="## Extra context\nSome info",
+        )
+
+        assert "## Extra context" in prompt
+        assert "Some info" in prompt
+
+
+class TestProductRoleWeb:
+    def test_explore_prompt_web_uses_playwright(self):
+        verification = VerificationConfig(
+            type="web",
+            base_url="http://localhost:3000",
+        )
+        role = ProductRole(verification=verification)
+        prompt = role.build_prompt("explore", round_num=1, round_dir="/r/001", goals=["Fix login"])
+
+        assert "http://localhost:3000" in prompt
+        assert "Playwright" in prompt
+        assert "requirement.md" in prompt
+
+    def test_acceptance_prompt_web_uses_playwright(self):
+        verification = VerificationConfig(
+            type="web",
+            base_url="http://localhost:3000",
+        )
+        role = ProductRole(verification=verification)
+        prompt = role.build_prompt("acceptance", round_num=1, round_dir="/r/001", goals=["Fix login"])
+
+        assert "http://localhost:3000" in prompt
+        assert "Playwright" in prompt
+        assert "PASS" in prompt and "FAIL" in prompt
 
 
 class TestDeveloperRole:
