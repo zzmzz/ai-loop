@@ -13,7 +13,9 @@ DETECT_PROMPT = """\
   "start_command": "启动 dev server 的命令（如 pnpm dev, npm start, yarn dev, cargo run 等）",
   "health_url": "dev server 启动后的健康检查 URL（如 http://localhost:3000）",
   "base_url": "浏览器访问的 URL（通常和 health_url 一样）",
-  "goals": ["基于项目现状，建议的一个改进目标"]
+  "goals": ["基于项目现状，建议的一个改进目标"],
+  "test_command": "测试命令（如 pytest, npm test, cargo test，从 pyproject.toml/package.json/Makefile 推断）",
+  "run_examples": ["示例运行命令（CLI 项目从 entry_points/bin 推断）"]
 }
 
 检测规则：
@@ -23,6 +25,10 @@ DETECT_PROMPT = """\
 4. 如果是 Python 项目，检查 manage.py / pyproject.toml
 5. 端口优先从配置文件中读取，找不到就用框架默认端口
 6. 只输出 JSON，不要 markdown 代码块，不要解释
+7. 检查 pyproject.toml 的 [tool.pytest.ini_options] 或 scripts 段推断 test_command
+8. 检查 package.json 的 scripts.test 推断 test_command
+9. 检查 Makefile 的 test target 推断 test_command
+10. 从 pyproject.toml 的 [project.scripts] 或 package.json 的 bin 推断 run_examples
 """
 
 
@@ -34,13 +40,16 @@ def detect_project_config(project_path: str) -> dict:
         "--allowedTools", "Read,Glob,Grep,Bash",
         "--output-format", "text",
     ]
-    result = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        timeout=120,
-        cwd=project_path,
-    )
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            cwd=project_path,
+        )
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("项目检测超时 (timeout=120s)")
     if result.returncode != 0:
         raise RuntimeError(f"项目检测失败: {result.stderr[:500]}")
 

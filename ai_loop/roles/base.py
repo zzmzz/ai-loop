@@ -47,10 +47,10 @@ class RoleRunner:
             "--input-format", "stream-json",
             "--permission-prompt-tool", "stdio",
         ]
-        if self.allowed_tools:
-            cmd += ["--allowedTools", ",".join(self.allowed_tools)]
         if verbose:
             cmd.append("--verbose")
+        if self.allowed_tools:
+            cmd += ["--allowedTools", ",".join(self.allowed_tools)]
 
         proc = subprocess.Popen(
             cmd,

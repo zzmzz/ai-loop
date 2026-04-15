@@ -10,7 +10,7 @@ class ContextCollector:
         "product:clarify": ["design.md"],
         "developer:implement": ["design.md", "clarification.md"],
         "developer:verify": ["requirement.md"],
-        "reviewer:review": ["requirement.md", "design.md"],
+        "reviewer:review": ["requirement.md", "design.md", "dev-log.md"],
         "product:acceptance": ["requirement.md", "dev-log.md"],
         "developer:fix_review": ["review.md"],
     }

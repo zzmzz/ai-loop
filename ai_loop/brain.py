@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 import json
 import re
@@ -37,9 +37,14 @@ DECISION_POINT_INSTRUCTIONS = {
         "/ FAIL_REQ（需求不清导致，需产品重新定义）/ ESCALATE（需人类介入）"
     ),
     "round_summary": (
-        "生成本轮总结。在 details 字段中写一段简洁的轮次总结，"
-        "包括：做了什么、结果如何、关键决策和发现。"
-        "decision 固定为 PASS。"
+        "生成本轮总结。输出 JSON 格式：\n"
+        '{"decision": "PASS", "reason": "一句话总结", '
+        '"details": "完整轮次总结", '
+        '"memories": {"product": "...", "developer": "...", "reviewer": "..."}}\n'
+        "memories 中为各角色生成差异化的记忆内容：\n"
+        "- product：侧重需求变更、用户反馈、验收结果\n"
+        "- developer：侧重技术决策、架构变更、代码模式\n"
+        "- reviewer：侧重审查发现的模式、反复出现的问题\n"
     ),
 }
 
@@ -49,6 +54,7 @@ class BrainDecision:
     decision: str
     reason: str
     details: str = ""
+    memories: dict = field(default_factory=dict)
 
     @classmethod
     def from_claude_output(cls, raw: str) -> "BrainDecision":
@@ -59,6 +65,7 @@ class BrainDecision:
                 decision=data["decision"],
                 reason=data.get("reason", ""),
                 details=data.get("details", ""),
+                memories=data.get("memories", {}),
             )
         except (json.JSONDecodeError, KeyError):
             pass
@@ -72,6 +79,7 @@ class BrainDecision:
                     decision=data["decision"],
                     reason=data.get("reason", ""),
                     details=data.get("details", ""),
+                    memories=data.get("memories", {}),
                 )
             except (json.JSONDecodeError, KeyError):
                 pass
@@ -88,7 +96,7 @@ class Brain:
     def __init__(self, orchestrator_cwd: str):
         self._runner = RoleRunner(
             role_name="brain",
-            allowed_tools=["Read", "Glob", "Grep"],
+            allowed_tools=[],
         )
         self._cwd = orchestrator_cwd
 
@@ -100,22 +108,74 @@ class Brain:
         for fname in file_names:
             fpath = round_dir / fname
             if fpath.exists():
-                file_refs.append(f"- {fpath}")
+                content = fpath.read_text()
+                file_refs.append(f"### {fname}\n\n{content}")
 
-        files_section = "\n".join(file_refs) if file_refs else "（无文件）"
+        files_section = "\n\n".join(file_refs) if file_refs else "（无文件）"
 
-        prompt = f"""你是编排器决策大脑。请阅读以下文件并做出判断。
+        if decision_point == "round_summary":
+            # round_summary instruction already specifies its own JSON schema (with memories field)
+            format_hint = "按上述格式输出 JSON，不要输出其他内容。"
+        else:
+            format_hint = (
+                '输出 JSON 格式的决策：\n'
+                '{{"decision": "...", "reason": "一句话理由", "details": "补充细节（可选）"}}\n\n'
+                '只输出 JSON，不要输出其他内容。'
+            )
+
+        prompt = f"""你是编排器决策大脑。根据以下文件内容做出判断。
 
 决策点：{decision_point}
 {instruction}
 
-相关文件：
+相关文件内容：
 {files_section}
 
-请阅读上述文件后，输出 JSON 格式的决策：
-{{"decision": "...", "reason": "一句话理由", "details": "补充细节（可选）"}}
-
-只输出 JSON，不要输出其他内容。"""
+根据上述文件内容，{format_hint}"""
 
         raw_output = self._runner.call(prompt, cwd=self._cwd)
         return BrainDecision.from_claude_output(raw_output)
+
+    def generate_code_digest(self, project_path: str, digest_path: Path,
+                             tree_output: str, diff_output: str) -> None:
+        existing = ""
+        if digest_path.exists():
+            existing = digest_path.read_text()
+
+        if existing:
+            prompt = f"""你是项目代码分析助手。请根据以下信息更新项目代码摘要。
+
+当前摘要：
+{existing}
+
+目录结构：
+{tree_output}
+
+自上轮以来的代码变更（git diff）：
+{diff_output}
+
+请更新摘要，只修改变更涉及的部分。输出完整的更新后摘要，不要输出其他内容。"""
+        else:
+            prompt = f"""你是项目代码分析助手。请根据以下信息生成项目代码摘要。
+
+项目路径：{project_path}
+
+目录结构：
+{tree_output}
+
+最近代码变更（git diff）：
+{diff_output}
+
+生成一份结构化的代码摘要，包括：项目架构、主要模块、关键文件及其职责。
+不超过 1000 字。只输出摘要文本，不要输出其他内容。"""
+
+        result = self._runner.call(prompt, cwd=self._cwd)
+        digest_path.write_text(result)
+
+    def summarize_memories(self, old_memories_text: str) -> str:
+        prompt = f"""你是记忆压缩助手。将以下多轮记忆合并为一段不超过 500 字的概括性摘要。
+保留关键决策、发现和模式，去除冗余细节。只输出摘要文本，不要输出其他内容。
+
+待压缩的记忆：
+{old_memories_text}"""
+        return self._runner.call(prompt, cwd=self._cwd)

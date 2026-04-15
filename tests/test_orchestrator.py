@@ -19,12 +19,13 @@ def orch(ai_loop_dir: Path, sample_config: dict) -> Orchestrator:
 
 
 class TestOrchestrator:
+    @patch.object(Orchestrator, "_update_code_digest")
     @patch.object(Orchestrator, "_call_role")
     @patch.object(Orchestrator, "_ask_brain")
     @patch.object(Orchestrator, "_server_start")
     @patch.object(Orchestrator, "_server_stop")
     def test_single_round_happy_path(
-        self, mock_stop, mock_start, mock_brain, mock_role, orch: Orchestrator
+        self, mock_stop, mock_start, mock_brain, mock_role, mock_digest, orch: Orchestrator
     ):
         # Brain always approves
         mock_brain.return_value = BrainDecision(decision="PROCEED", reason="ok")
@@ -53,12 +54,13 @@ class TestOrchestrator:
         assert "reviewer:review" in role_calls
         assert "product:acceptance" in role_calls
 
+    @patch.object(Orchestrator, "_update_code_digest")
     @patch.object(Orchestrator, "_call_role")
     @patch.object(Orchestrator, "_ask_brain")
     @patch.object(Orchestrator, "_server_start")
     @patch.object(Orchestrator, "_server_stop")
     def test_review_rework_loop(
-        self, mock_stop, mock_start, mock_brain, mock_role, orch: Orchestrator
+        self, mock_stop, mock_start, mock_brain, mock_role, mock_digest, orch: Orchestrator
     ):
         call_count = {"review": 0}
 
@@ -90,12 +92,13 @@ def cli_orch(cli_ai_loop_dir: Path) -> Orchestrator:
 
 
 class TestOrchestratorMemoryCompact:
+    @patch.object(Orchestrator, "_update_code_digest")
     @patch.object(Orchestrator, "_call_role")
     @patch.object(Orchestrator, "_ask_brain")
     @patch.object(Orchestrator, "_server_start")
     @patch.object(Orchestrator, "_server_stop")
     def test_memory_compact_called_when_exceeding_window(
-        self, mock_stop, mock_start, mock_brain, mock_role, orch: Orchestrator
+        self, mock_stop, mock_start, mock_brain, mock_role, mock_digest, orch: Orchestrator
     ):
         """REQ-3: _update_all_memories should trigger compact when rounds > window."""
         # Pre-populate memories so count exceeds window
@@ -129,12 +132,13 @@ class TestOrchestratorMemoryCompact:
 
 
 class TestOrchestratorRoleSpecificMemories:
+    @patch.object(Orchestrator, "_update_code_digest")
     @patch.object(Orchestrator, "_call_role")
     @patch.object(Orchestrator, "_ask_brain")
     @patch.object(Orchestrator, "_server_start")
     @patch.object(Orchestrator, "_server_stop")
     def test_role_specific_memories(
-        self, mock_stop, mock_start, mock_brain, mock_role, orch: Orchestrator
+        self, mock_stop, mock_start, mock_brain, mock_role, mock_digest, orch: Orchestrator
     ):
         """REQ-4: Different roles should get different memory content."""
         # Ensure CLAUDE.md has memory section
@@ -346,10 +350,11 @@ class TestInteractionCallback:
 
 
 class TestOrchestratorCliProject:
+    @patch.object(Orchestrator, "_update_code_digest")
     @patch.object(Orchestrator, "_call_role")
     @patch.object(Orchestrator, "_ask_brain")
     def test_server_not_started_for_cli_project(
-        self, mock_brain, mock_role, cli_orch: Orchestrator
+        self, mock_brain, mock_role, mock_digest, cli_orch: Orchestrator
     ):
         def brain_side_effect(point, **kwargs):
             if point == "post_acceptance":

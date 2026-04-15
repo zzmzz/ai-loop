@@ -1,8 +1,8 @@
 # tests/test_integration.py
 """
 Integration test: runs a full single round with a mock Claude CLI.
-Instead of calling the real `claude` binary, we patch subprocess.run
-to return canned responses per role.
+Instead of calling the real `claude` binary, we patch subprocess.Popen
+to return canned stream-json responses per role.
 """
 from pathlib import Path
 from unittest.mock import patch, MagicMock
@@ -11,53 +11,6 @@ import yaml
 import pytest
 from ai_loop.orchestrator import Orchestrator
 from ai_loop.state import load_state
-
-
-MOCK_RESPONSES = {
-    "product": {
-        "explore": "Written requirement.md",
-        "clarify": "Written clarification.md",
-        "acceptance": "Written acceptance.md",
-    },
-    "developer": {
-        "design": "Written design.md",
-        "implement": "Written dev-log.md",
-        "verify": "Verification passed",
-        "fix_review": "Fixed issues",
-    },
-    "reviewer": {
-        "review": "Written review.md",
-    },
-    "brain": "default_brain",
-}
-
-
-def mock_subprocess_run(cmd, **kwargs):
-    """Route mock responses based on the prompt content."""
-    mock = MagicMock()
-    mock.returncode = 0
-    mock.stderr = ""
-
-    prompt = ""
-    if "-p" in cmd:
-        idx = cmd.index("-p")
-        if idx + 1 < len(cmd):
-            prompt = cmd[idx + 1]
-
-    # Brain calls: return JSON decisions
-    if "决策大脑" in prompt or "决策点" in prompt:
-        if "post_acceptance" in prompt or "acceptance" in prompt.lower():
-            mock.stdout = '{"decision": "PASS", "reason": "ok"}'
-        elif "post_review" in prompt or "审查" in prompt:
-            mock.stdout = '{"decision": "APPROVE", "reason": "ok"}'
-        elif "round_summary" in prompt:
-            mock.stdout = '{"decision": "PASS", "reason": "ok", "details": "Round completed"}'
-        else:
-            mock.stdout = '{"decision": "PROCEED", "reason": "ok"}'
-    else:
-        mock.stdout = "Role output"
-
-    return mock
 
 
 @pytest.fixture
@@ -103,13 +56,55 @@ def full_project(tmp_path: Path) -> Path:
 
 
 class TestIntegration:
-    @patch("ai_loop.roles.base.subprocess.run", side_effect=mock_subprocess_run)
+    @patch("ai_loop.roles.base.subprocess.Popen")
     @patch("ai_loop.server.subprocess.Popen")
     @patch("ai_loop.server.requests.get")
-    def test_full_round_completes(self, mock_get, mock_popen, mock_run, full_project: Path):
+    def test_full_round_completes(self, mock_get, mock_server_popen, mock_role_popen, full_project: Path):
         # Mock server health check
-        mock_popen.return_value = MagicMock(poll=MagicMock(return_value=None))
+        mock_server_popen.return_value = MagicMock(poll=MagicMock(return_value=None))
         mock_get.return_value = MagicMock(status_code=200)
+
+        # Mock RoleRunner Popen - return stream-json result events.
+        # The mock captures stdin writes to detect Brain decision calls
+        # and returns appropriate JSON responses.
+        def make_mock_proc(*args, **kwargs):
+            mock_proc = MagicMock()
+            captured_input = []
+
+            def capture_write(data):
+                captured_input.append(data)
+
+            mock_proc.stdin.write = MagicMock(side_effect=capture_write)
+            mock_proc.stdin.flush = MagicMock()
+
+            def stdout_iter():
+                # _send_message wraps prompt in JSON via json.dumps, which
+                # escapes Chinese chars as \uXXXX. Match on ASCII keywords
+                # from the Brain decision_point values instead.
+                raw = " ".join(captured_input)
+                is_brain = any(dp in raw for dp in (
+                    "post_requirement", "post_design", "post_implementation",
+                    "post_review", "post_acceptance", "round_summary",
+                ))
+                if is_brain:
+                    if "post_acceptance" in raw:
+                        result = '{"decision": "PASS", "reason": "ok"}'
+                    elif "post_review" in raw:
+                        result = '{"decision": "APPROVE", "reason": "ok"}'
+                    elif "round_summary" in raw:
+                        result = '{"decision": "PASS", "reason": "ok", "details": "Round completed"}'
+                    else:
+                        result = '{"decision": "PROCEED", "reason": "ok"}'
+                else:
+                    result = "Role output"
+                yield json.dumps({"type": "result", "result": result, "session_id": "s1"})
+
+            mock_proc.stdout.__iter__ = MagicMock(side_effect=stdout_iter)
+            mock_proc.wait.return_value = None
+            mock_proc.returncode = 0
+            return mock_proc
+
+        mock_role_popen.side_effect = make_mock_proc
 
         ai_dir = full_project / ".ai-loop"
         orch = Orchestrator(ai_dir)

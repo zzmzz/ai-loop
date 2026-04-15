@@ -19,7 +19,7 @@ class DeveloperRole:
     def _design_prompt(self, round_num, round_dir, goals_text):
         return f"""你是开发者。当前阶段：技术设计。
 
-阅读需求文档：{round_dir}/requirement.md
+需求文档已附在下方，无需再次读取。
 
 然后输出实现计划：
 - 列出需要创建/修改的文件和路径
@@ -42,8 +42,7 @@ timestamp: （当前时间 ISO 格式）
     def _implement_prompt(self, round_num, round_dir, goals_text):
         return f"""你是开发者。当前阶段：实现。
 
-阅读设计文档：{round_dir}/design.md
-如有澄清文档也请阅读：{round_dir}/clarification.md（如存在）
+设计文档和澄清文档（如有）已附在下方，无需再次读取。
 
 严格遵循 TDD 流程：
 1. RED —— 先写一个会失败的测试，描述需求期望的行为
@@ -58,6 +57,9 @@ timestamp: （当前时间 ISO 格式）
 2. 检查每个需求点是否有对应测试覆盖
 3. 运行 lint（如有）
 4. git diff 检查是否有调试代码遗留
+
+实现完成后额外检查：
+5. 检查 pytest 覆盖率报告，确认无关键路径遗漏
 
 禁止用语："应该可以"、"看起来没问题"。只允许贴出命令输出作为证据。
 
@@ -77,16 +79,17 @@ timestamp: （当前时间 ISO 格式）
 
 运行以下验证并在 {round_dir}/dev-log.md 末尾追加验证结果：
 1. 运行项目完整测试套件，贴出完整输出
-2. 对照 {round_dir}/requirement.md 检查每个需求点是否有测试覆盖
+2. 对照下方附带的需求文档检查每个需求点是否有测试覆盖
 3. 运行 lint（如有）
 4. git diff 检查是否有调试代码遗留
+5. 检查 pytest 覆盖率报告（term-missing），确认新增代码已覆盖
 
 只贴命令输出作为证据，不要用"应该""可能"等措辞。"""
 
     def _fix_review_prompt(self, round_num, round_dir, goals_text):
         return f"""你是开发者。你收到了代码审查反馈，需要修复。
 
-阅读审查意见：{round_dir}/review.md
+审查意见已附在下方，无需再次读取。
 
 处理每条反馈时：
 1. 用自己的话复述这条反馈要求什么

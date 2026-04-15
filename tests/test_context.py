@@ -48,3 +48,15 @@ class TestContextCollector:
         assert "req content" in result
         assert "design.md" in result
         assert "design content" in result
+
+    def test_reviewer_review_includes_dev_log(self, tmp_path: Path):
+        """REQ-1: reviewer:review should depend on dev-log.md."""
+        (tmp_path / "requirement.md").write_text("req")
+        (tmp_path / "design.md").write_text("design")
+        (tmp_path / "dev-log.md").write_text("dev log content")
+
+        collector = ContextCollector()
+        result = collector.collect("reviewer:review", tmp_path)
+
+        assert "dev-log.md" in result
+        assert "dev log content" in result

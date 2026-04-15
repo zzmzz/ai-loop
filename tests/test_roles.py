@@ -135,6 +135,36 @@ class TestRoleRunner:
         mock_proc.stdin.close.assert_called_once()
 
     @patch("ai_loop.roles.base.subprocess.Popen")
+    def test_verbose_flag_conditional(self, mock_popen: MagicMock):
+        """--verbose should only appear in cmd when verbose=True."""
+        events = ['{"type": "result", "result": "done", "session_id": "s1"}']
+        mock_proc = MagicMock()
+        mock_proc.stdout.__iter__ = MagicMock(return_value=iter(events))
+        mock_proc.wait.return_value = None
+        mock_proc.returncode = 0
+        mock_popen.return_value = mock_proc
+
+        runner = RoleRunner(role_name="dev", allowed_tools=["Read"])
+
+        # verbose=False: --verbose should NOT be in cmd
+        runner.call("test", cwd="/tmp", verbose=False)
+        cmd_false = mock_popen.call_args[0][0]
+        assert "--verbose" not in cmd_false
+
+        # Reset mock for verbose=True
+        mock_popen.reset_mock()
+        mock_proc2 = MagicMock()
+        events2 = ['{"type": "result", "result": "done", "session_id": "s2"}']
+        mock_proc2.stdout.__iter__ = MagicMock(return_value=iter(events2))
+        mock_proc2.wait.return_value = None
+        mock_proc2.returncode = 0
+        mock_popen.return_value = mock_proc2
+
+        runner.call("test", cwd="/tmp", verbose=True)
+        cmd_true = mock_popen.call_args[0][0]
+        assert "--verbose" in cmd_true
+
+    @patch("ai_loop.roles.base.subprocess.Popen")
     def test_call_nonzero_exit_raises(self, mock_popen: MagicMock):
         """Non-zero exit code should raise RuntimeError."""
         events = [
@@ -300,6 +330,16 @@ class TestDeveloperRole:
         assert "对照下方附带的需求文档" in prompt
         assert "对照 /r/001/requirement.md" not in prompt
 
+    def test_implement_prompt_mentions_coverage(self):
+        role = DeveloperRole()
+        prompt = role.build_prompt("implement", round_num=1, round_dir="/r/001", goals=["Fix login"])
+        assert "覆盖率" in prompt
+
+    def test_verify_prompt_mentions_coverage(self):
+        role = DeveloperRole()
+        prompt = role.build_prompt("verify", round_num=1, round_dir="/r/001", goals=["Fix login"])
+        assert "覆盖率" in prompt
+
 
 class TestDeveloperRoleContext:
     def test_context_appended_to_design_prompt(self):
@@ -324,6 +364,11 @@ class TestReviewerRole:
         assert "1. 需求：" not in prompt
         assert "2. 设计：" not in prompt
         assert "已附在下方" in prompt
+
+    def test_review_prompt_mentions_coverage(self):
+        role = ReviewerRole()
+        prompt = role.build_prompt("review", round_num=1, round_dir="/r/001", goals=["Fix login"])
+        assert "覆盖率" in prompt
 
 
 class TestReviewerRoleContext:
