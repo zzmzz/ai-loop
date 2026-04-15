@@ -36,35 +36,119 @@ class TestParseFrontmatter:
 
 
 class TestRoleRunner:
-    @patch("ai_loop.roles.base.subprocess.run")
-    def test_call_claude_captures_output(self, mock_run: MagicMock):
-        mock_run.return_value = MagicMock(
-            stdout="Claude output here",
-            stderr="",
-            returncode=0,
-        )
-        runner = RoleRunner(
-            role_name="product",
-            allowed_tools=["Read", "Bash"],
-        )
+    @patch("ai_loop.roles.base.subprocess.Popen")
+    def test_call_sends_prompt_via_stdin_and_reads_result(self, mock_popen: MagicMock):
+        """RoleRunner.call() should write prompt JSON to stdin and return result from stdout."""
+        events = [
+            '{"type": "system", "session_id": "sess-123"}',
+            '{"type": "result", "result": "Final output", "session_id": "sess-123"}',
+        ]
+        mock_proc = MagicMock()
+        mock_proc.stdout.__iter__ = MagicMock(return_value=iter(events))
+        mock_proc.wait.return_value = None
+        mock_proc.returncode = 0
+        mock_popen.return_value = mock_proc
+
+        runner = RoleRunner(role_name="product", allowed_tools=["Read", "Bash"])
         output = runner.call("Do something", cwd="/tmp/ws")
 
-        mock_run.assert_called_once()
-        cmd = mock_run.call_args[0][0]
-        assert "claude" in cmd[0]
-        assert "-p" in cmd
-        assert "--allowedTools" in cmd
-        assert output == "Claude output here"
+        assert output == "Final output"
+        mock_popen.assert_called_once()
+        cmd = mock_popen.call_args[0][0]
+        assert "--input-format" in cmd
+        assert "stream-json" in cmd
+        assert "--output-format" in cmd
+        assert "--permission-prompt-tool" in cmd
+        # Verify prompt was written to stdin
+        mock_proc.stdin.write.assert_called_once()
+        written = mock_proc.stdin.write.call_args[0][0]
+        import json as _json
+        msg = _json.loads(written.strip())
+        assert msg["type"] == "user"
+        assert "Do something" in msg["message"]["content"]
+        mock_proc.stdin.close.assert_called_once()
 
-    @patch("ai_loop.roles.base.subprocess.run")
-    def test_call_claude_nonzero_exit_raises(self, mock_run: MagicMock):
-        mock_run.return_value = MagicMock(
-            stdout="",
-            stderr="error occurred",
-            returncode=1,
-        )
+    @patch("ai_loop.roles.base.subprocess.Popen")
+    def test_call_auto_approves_control_requests(self, mock_popen: MagicMock):
+        """RoleRunner should auto-approve control_request events."""
+        events = [
+            '{"type": "control_request", "request_id": "req-1", "request": {"subtype": "can_use_tool", "tool_name": "Read", "input": {}}}',
+            '{"type": "result", "result": "Done", "session_id": "sess-1"}',
+        ]
+        mock_proc = MagicMock()
+        mock_proc.stdout.__iter__ = MagicMock(return_value=iter(events))
+        mock_proc.wait.return_value = None
+        mock_proc.returncode = 0
+        mock_popen.return_value = mock_proc
+
         runner = RoleRunner(role_name="dev", allowed_tools=["Read"])
+        output = runner.call("Do something", cwd="/tmp")
 
+        assert output == "Done"
+        # stdin.write called twice: once for prompt, once for permission response
+        assert mock_proc.stdin.write.call_count == 2
+        import json as _json
+        perm_response = _json.loads(mock_proc.stdin.write.call_args_list[1][0][0].strip())
+        assert perm_response["type"] == "control_response"
+        assert perm_response["response"]["response"]["behavior"] == "allow"
+
+    @patch("ai_loop.roles.base.subprocess.Popen")
+    def test_call_with_interaction_callback_on_needs_input(self, mock_popen: MagicMock):
+        """When needs_input detected and callback provided, should send user answer and continue."""
+        # First result has needs_input, second result is final
+        events = [
+            '{"type": "result", "result": "Which approach?\\n{\\"needs_input\\": true}", "session_id": "s1"}',
+            '{"type": "result", "result": "Final output after answer", "session_id": "s1"}',
+        ]
+        mock_proc = MagicMock()
+        mock_proc.stdout.__iter__ = MagicMock(return_value=iter(events))
+        mock_proc.wait.return_value = None
+        mock_proc.returncode = 0
+        mock_popen.return_value = mock_proc
+
+        callback = MagicMock(return_value="Use approach A")
+        runner = RoleRunner(role_name="dev", allowed_tools=["Read"])
+        output = runner.call("Design something", cwd="/tmp", interaction_callback=callback)
+
+        assert output == "Final output after answer"
+        callback.assert_called_once()
+        # The question text passed to callback should be the content before the marker
+        question_arg = callback.call_args[0][0]
+        assert "Which approach?" in question_arg
+
+    @patch("ai_loop.roles.base.subprocess.Popen")
+    def test_call_without_callback_ignores_needs_input(self, mock_popen: MagicMock):
+        """Without interaction_callback, needs_input marker is ignored and result returned as-is."""
+        events = [
+            '{"type": "result", "result": "Output\\n{\\"needs_input\\": true}", "session_id": "s1"}',
+        ]
+        mock_proc = MagicMock()
+        mock_proc.stdout.__iter__ = MagicMock(return_value=iter(events))
+        mock_proc.wait.return_value = None
+        mock_proc.returncode = 0
+        mock_popen.return_value = mock_proc
+
+        runner = RoleRunner(role_name="dev", allowed_tools=["Read"])
+        output = runner.call("Do something", cwd="/tmp")
+
+        assert "needs_input" in output
+        mock_proc.stdin.close.assert_called_once()
+
+    @patch("ai_loop.roles.base.subprocess.Popen")
+    def test_call_nonzero_exit_raises(self, mock_popen: MagicMock):
+        """Non-zero exit code should raise RuntimeError."""
+        events = [
+            '{"type": "result", "result": "", "session_id": "s1"}',
+        ]
+        mock_proc = MagicMock()
+        mock_proc.stdout.__iter__ = MagicMock(return_value=iter(events))
+        mock_proc.wait.return_value = None
+        mock_proc.returncode = 1
+        mock_proc.stderr = MagicMock()
+        mock_proc.stderr.read.return_value = "error occurred"
+        mock_popen.return_value = mock_proc
+
+        runner = RoleRunner(role_name="dev", allowed_tools=["Read"])
         with pytest.raises(RuntimeError, match="Claude CLI 调用失败"):
             runner.call("Do something", cwd="/tmp")
 
@@ -88,16 +172,20 @@ class TestProductRole:
         verification = VerificationConfig(type="web", base_url="http://localhost:3000")
         role = ProductRole(verification=verification)
         prompt = role.build_prompt("acceptance", round_num=1, round_dir="/r/001", goals=["Fix login"])
-        assert "requirement.md" in prompt
         assert "acceptance.md" in prompt
         assert "PASS" in prompt and "FAIL" in prompt
+        # REQ-1: should NOT instruct to read requirement.md
+        assert "阅读本轮需求" not in prompt
+        assert "下方附带的需求文档" in prompt
 
     def test_clarify_prompt(self):
         verification = VerificationConfig(type="web", base_url="http://localhost:3000")
         role = ProductRole(verification=verification)
         prompt = role.build_prompt("clarify", round_num=1, round_dir="/r/001", goals=["Fix login"])
-        assert "design.md" in prompt
         assert "clarification.md" in prompt
+        # REQ-1: should NOT instruct to read design.md
+        assert "请阅读：" not in prompt
+        assert "已附在下方" in prompt
 
 
 class TestProductRoleCli:
@@ -114,6 +202,9 @@ class TestProductRoleCli:
         assert "pytest tests/ -v" in prompt
         assert "Playwright" not in prompt
         assert "requirement.md" in prompt
+        # REQ-5: should reference code-digest.md and incremental reading
+        assert "code-digest.md" in prompt
+        assert "变更部分" in prompt
 
     def test_acceptance_prompt_cli_uses_test_command(self):
         verification = VerificationConfig(
@@ -128,6 +219,9 @@ class TestProductRoleCli:
         assert "my-cli --help" in prompt
         assert "Playwright" not in prompt
         assert "PASS" in prompt and "FAIL" in prompt
+        # REQ-1: should NOT instruct to read requirement.md
+        assert "阅读本轮需求" not in prompt
+        assert "下方附带的需求文档" in prompt
 
     def test_context_appended_to_prompt(self):
         verification = VerificationConfig(type="cli", test_command="pytest")
@@ -153,6 +247,9 @@ class TestProductRoleWeb:
         assert "http://localhost:3000" in prompt
         assert "Playwright" in prompt
         assert "requirement.md" in prompt
+        # REQ-5: should reference code-digest.md and incremental reading
+        assert "code-digest.md" in prompt
+        assert "变更部分" in prompt
 
     def test_acceptance_prompt_web_uses_playwright(self):
         verification = VerificationConfig(
@@ -171,9 +268,11 @@ class TestDeveloperRole:
     def test_design_prompt(self):
         role = DeveloperRole()
         prompt = role.build_prompt("design", round_num=1, round_dir="/r/001", goals=["Fix login"])
-        assert "requirement.md" in prompt
         assert "design.md" in prompt
         assert "待确认问题" in prompt
+        # REQ-1: should NOT instruct to read requirement.md
+        assert "阅读需求文档" not in prompt
+        assert "已附在下方" in prompt
 
     def test_implement_prompt_includes_tdd(self):
         role = DeveloperRole()
@@ -181,11 +280,25 @@ class TestDeveloperRole:
         assert "RED" in prompt
         assert "GREEN" in prompt
         assert "dev-log.md" in prompt
+        # REQ-1: should NOT instruct to read design/clarification
+        assert "阅读设计文档" not in prompt
+        assert "如有澄清文档也请阅读" not in prompt
+        assert "已附在下方" in prompt
 
     def test_fix_review_prompt(self):
         role = DeveloperRole()
         prompt = role.build_prompt("fix_review", round_num=1, round_dir="/r/001", goals=["Fix login"])
-        assert "review.md" in prompt
+        assert "dev-log.md" in prompt  # output file reference
+        # REQ-1: should NOT instruct to read review.md
+        assert "阅读审查意见" not in prompt
+        assert "已附在下方" in prompt
+
+    def test_verify_prompt_no_file_path(self):
+        role = DeveloperRole()
+        prompt = role.build_prompt("verify", round_num=1, round_dir="/r/001", goals=["Fix login"])
+        # REQ-1: should reference "下方附带的需求文档" not file path
+        assert "对照下方附带的需求文档" in prompt
+        assert "对照 /r/001/requirement.md" not in prompt
 
 
 class TestDeveloperRoleContext:
@@ -204,11 +317,13 @@ class TestReviewerRole:
     def test_review_prompt(self):
         role = ReviewerRole()
         prompt = role.build_prompt("review", round_num=1, round_dir="/r/001", goals=["Fix login"])
-        assert "requirement.md" in prompt
-        assert "design.md" in prompt
         assert "git diff" in prompt
         assert "APPROVE" in prompt
         assert "REQUEST_CHANGES" in prompt
+        # REQ-1: should NOT list file paths to read
+        assert "1. 需求：" not in prompt
+        assert "2. 设计：" not in prompt
+        assert "已附在下方" in prompt
 
 
 class TestReviewerRoleContext:

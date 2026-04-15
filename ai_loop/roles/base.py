@@ -1,6 +1,5 @@
 import json
 import subprocess
-import sys
 import yaml
 
 
@@ -39,47 +38,31 @@ class RoleRunner:
         self.role_name = role_name
         self.allowed_tools = allowed_tools
 
-    def call(self, prompt: str, cwd: str, timeout: int = 600, verbose: bool = False) -> str:
-        if verbose:
-            return self._call_streaming(prompt, cwd, timeout)
-        return self._call_quiet(prompt, cwd, timeout)
-
-    def _call_quiet(self, prompt: str, cwd: str, timeout: int) -> str:
+    def call(self, prompt: str, cwd: str, timeout: int = 600,
+             verbose: bool = False,
+             interaction_callback=None) -> str:
         cmd = [
             "claude",
-            "-p", prompt,
-            "--allowedTools", ",".join(self.allowed_tools),
-            "--output-format", "text",
-        ]
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            cwd=cwd,
-        )
-        if result.returncode != 0:
-            raise RuntimeError(
-                f"Claude CLI 调用失败 (role={self.role_name}, "
-                f"exit={result.returncode}): {result.stderr[:500]}"
-            )
-        return result.stdout
-
-    def _call_streaming(self, prompt: str, cwd: str, timeout: int) -> str:
-        cmd = [
-            "claude",
-            "-p", prompt,
-            "--allowedTools", ",".join(self.allowed_tools),
             "--output-format", "stream-json",
-            "--verbose",
+            "--input-format", "stream-json",
+            "--permission-prompt-tool", "stdio",
         ]
+        if self.allowed_tools:
+            cmd += ["--allowedTools", ",".join(self.allowed_tools)]
+        if verbose:
+            cmd.append("--verbose")
+
         proc = subprocess.Popen(
             cmd,
+            stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
             cwd=cwd,
         )
+
+        # Send initial prompt
+        self._send_message(proc, prompt)
 
         final_result = ""
         try:
@@ -91,13 +74,33 @@ class RoleRunner:
                     event = json.loads(line)
                 except json.JSONDecodeError:
                     continue
-                self._render_event(event)
-                if event.get("type") == "result":
-                    final_result = event.get("result", "")
+
+                etype = event.get("type")
+
+                if etype == "control_request":
+                    self._handle_control_request(proc, event)
+                elif etype == "result":
+                    result_text = event.get("result", "")
+                    if interaction_callback and self._has_needs_input(result_text):
+                        question = self._extract_question(result_text)
+                        answer = interaction_callback(question)
+                        self._send_message(proc, answer)
+                        # Continue reading for next result
+                    else:
+                        final_result = result_text
+                        break
+                elif verbose:
+                    self._render_event(event)
+
+            proc.stdin.close()
             proc.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
             proc.kill()
-            raise
+            proc.wait(timeout=5)
+            raise RuntimeError(
+                f"Claude CLI 调用超时 (role={self.role_name}, "
+                f"timeout={timeout}s)"
+            )
 
         if proc.returncode != 0:
             stderr = proc.stderr.read() if proc.stderr else ""
@@ -106,6 +109,43 @@ class RoleRunner:
                 f"exit={proc.returncode}): {stderr[:500]}"
             )
         return final_result
+
+    def _send_message(self, proc, content: str) -> None:
+        msg = json.dumps({
+            "type": "user",
+            "message": {"role": "user", "content": content},
+        })
+        proc.stdin.write(msg + "\n")
+        proc.stdin.flush()
+
+    def _handle_control_request(self, proc, event: dict) -> None:
+        request_id = event.get("request_id", "")
+        request = event.get("request", {})
+        input_data = request.get("input", {})
+        response = json.dumps({
+            "type": "control_response",
+            "response": {
+                "subtype": "success",
+                "request_id": request_id,
+                "response": {
+                    "behavior": "allow",
+                    "updatedInput": input_data,
+                },
+            },
+        })
+        proc.stdin.write(response + "\n")
+        proc.stdin.flush()
+
+    @staticmethod
+    def _has_needs_input(text: str) -> bool:
+        return '{"needs_input": true}' in text or '{"needs_input":true}' in text
+
+    @staticmethod
+    def _extract_question(text: str) -> str:
+        for marker in ('{"needs_input": true}', '{"needs_input":true}'):
+            if marker in text:
+                return text[:text.rfind(marker)].strip()
+        return text.strip()
 
     def _render_event(self, event: dict) -> None:
         etype = event.get("type")
@@ -124,26 +164,11 @@ class RoleRunner:
                 elif btype == "text":
                     text = block.get("text", "")
                     if text.strip():
-                        # Show first 3 lines of text output
                         lines = text.strip().split("\n")
                         for ln in lines[:3]:
                             print(f"  {_c('dim', '│')} {ln}", flush=True)
                         if len(lines) > 3:
                             print(f"  {_c('dim', '│ ... (' + str(len(lines) - 3) + ' more lines)')}", flush=True)
-
-        elif etype == "user":
-            tool_result = event.get("tool_use_result", {})
-            if tool_result and isinstance(tool_result, dict):
-                stdout = tool_result.get("stdout", "")
-                stderr = tool_result.get("stderr", "")
-                output = stdout or stderr
-                if output:
-                    lines = output.strip().split("\n")
-                    for ln in lines[:2]:
-                        if ln.strip():
-                            print(f"  {_c('dim', '  →')} {_c('dim', ln[:100])}", flush=True)
-                    if len(lines) > 2:
-                        print(f"  {_c('dim', '  → ... (' + str(len(lines) - 2) + ' more lines)')}", flush=True)
 
         elif etype == "result":
             cost = event.get("total_cost_usd", 0)
