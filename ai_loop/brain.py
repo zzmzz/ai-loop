@@ -32,8 +32,10 @@ DECISION_POINT_INSTRUCTIONS = {
         "/ SKIP_MINOR（只有 Minor 问题，可跳过）/ ESCALATE（需人类介入）"
     ),
     "post_acceptance": (
-        "评估验收结果。"
-        "可选决策：PASS（验收通过）/ FAIL_IMPL（实现问题，需开发修复）"
+        "评估验收结果。注意 acceptance.md 中的 result 可能是 PASS / PARTIAL / FAIL。"
+        "可选决策：PASS（验收通过，包括 PARTIAL 且未通过项均为 P2）"
+        "/ PARTIAL_OK（P0 全过、仅 P1/P2 未通过，可接受，进入下一轮处理）"
+        "/ FAIL_IMPL（P0 未通过，属实现问题，需开发修复）"
         "/ FAIL_REQ（需求不清导致，需产品重新定义）/ ESCALATE（需人类介入）"
     ),
     "round_summary": (

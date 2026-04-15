@@ -38,9 +38,18 @@ class ProductRole:
 3. 只针对变更部分深入阅读
 4. 编写 Playwright Python 脚本访问 {self.verification.base_url}，像真实用户一样走完主要流程
 5. 截图保存到当前工作区的 notes/ 目录
-6. 结合代码理解和实际体验，输出需求文档
+6. 回答下方"强制问题"，理清需求本质
+7. 按模板输出需求文档
 
-输出文件：{round_dir}/requirement.md
+## 强制问题（先回答再写需求）
+
+在写需求前，你必须先在草稿中回答以下问题（答案不需要写入 requirement.md，但必须指导你的需求输出）：
+- **目标用户是谁？** 他们现在怎么完成这个任务？
+- **现状最大的痛点是什么？** 用户会在哪一步卡住或放弃？
+- **最窄的切入点是什么？** 改动最小但体验提升最大的一个点
+- **怎么验证做对了？** 用户行为或数据上的可观测变化
+
+## 输出文件：{round_dir}/requirement.md
 
 文件头部必须包含 YAML frontmatter：
 ---
@@ -51,7 +60,25 @@ result: null
 timestamp: （当前时间 ISO 格式）
 ---
 
-需求要具体可执行，避免模糊描述。每条需求说清楚"现状是什么"和"期望是什么"。"""
+文件正文按以下模板组织：
+
+### 问题描述
+（一段话说清楚要解决什么问题）
+
+### 目标用户
+（谁会受益，当前怎么做）
+
+### 具体需求
+每条需求格式：
+- **[P0/P1/P2] 需求标题**：现状是什么 → 期望是什么
+
+优先级说明：P0=必须做 P1=应该做 P2=可以做
+
+### 不做的事情
+（明确排除的范围，避免开发者过度发挥）
+
+### 验收标准
+（逐条可验证的条件，与具体需求一一对应）"""
 
     def _explore_prompt_cli(self, round_num, round_dir, goals_text):
         examples = "\n".join(f"  - `{e}`" for e in self.verification.run_examples)
@@ -67,9 +94,18 @@ timestamp: （当前时间 ISO 格式）
 4. 运行以下示例命令，像真实用户一样体验 CLI 行为：
 {examples}
 5. 运行测试命令了解现有测试覆盖：`{self.verification.test_command}`
-6. 结合代码理解和实际体验，输出需求文档
+6. 回答下方"强制问题"，理清需求本质
+7. 按模板输出需求文档
 
-输出文件：{round_dir}/requirement.md
+## 强制问题（先回答再写需求）
+
+在写需求前，你必须先在草稿中回答以下问题（答案不需要写入 requirement.md，但必须指导你的需求输出）：
+- **目标用户是谁？** 他们现在怎么完成这个任务？
+- **现状最大的痛点是什么？** 用户会在哪一步卡住或放弃？
+- **最窄的切入点是什么？** 改动最小但体验提升最大的一个点
+- **怎么验证做对了？** 用户行为或数据上的可观测变化
+
+## 输出文件：{round_dir}/requirement.md
 
 文件头部必须包含 YAML frontmatter：
 ---
@@ -80,7 +116,25 @@ result: null
 timestamp: （当前时间 ISO 格式）
 ---
 
-需求要具体可执行，避免模糊描述。每条需求说清楚"现状是什么"和"期望是什么"。"""
+文件正文按以下模板组织：
+
+### 问题描述
+（一段话说清楚要解决什么问题）
+
+### 目标用户
+（谁会受益，当前怎么做）
+
+### 具体需求
+每条需求格式：
+- **[P0/P1/P2] 需求标题**：现状是什么 → 期望是什么
+
+优先级说明：P0=必须做 P1=应该做 P2=可以做
+
+### 不做的事情
+（明确排除的范围，避免开发者过度发挥）
+
+### 验收标准
+（逐条可验证的条件，与具体需求一一对应）"""
 
     def _clarify_prompt(self, round_num, round_dir, goals_text):
         return f"""你是产品经理。开发者在设计文档中提出了待确认问题，请你回答。
@@ -109,9 +163,11 @@ timestamp: （当前时间 ISO 格式）
     def _acceptance_prompt_web(self, round_num, round_dir, goals_text):
         return f"""你是产品经理。你的任务是验收本轮开发成果。
 
-1. 参考下方附带的需求文档
+1. 参考下方附带的需求文档（注意每条需求的优先级 P0/P1/P2）
 2. 编写 Playwright Python 脚本访问 {self.verification.base_url}，逐条验证需求是否被满足
-3. 截图保存到 notes/ 目录，用于对比
+3. 每条需求验证前后各截一张图，命名规则：
+   - `notes/accept-{{需求编号}}-before.png`（操作前状态）
+   - `notes/accept-{{需求编号}}-after.png`（操作后状态）
 4. 输出验收结果
 
 输出文件：{round_dir}/acceptance.md
@@ -121,21 +177,34 @@ timestamp: （当前时间 ISO 格式）
 round: {round_num}
 role: product
 phase: acceptance
-result: PASS 或 FAIL
+result: PASS / PARTIAL / FAIL
 timestamp: （当前时间 ISO 格式）
 ---
 
-result 必须是 PASS 或 FAIL。如果 FAIL，逐条列出未通过的需求和原因。"""
+## 验收结果判定规则
+
+逐条验证需求，每条给出：
+- 需求编号和标题
+- 优先级（P0/P1/P2）
+- 结果：PASS / FAIL
+- 截图路径（before/after）
+- FAIL 时附原因
+
+## result 总判定
+
+- **PASS**：所有需求均通过
+- **PARTIAL**：P0 全部通过，但存在 P1 或 P2 未通过
+- **FAIL**：任何 P0 未通过"""
 
     def _acceptance_prompt_cli(self, round_num, round_dir, goals_text):
         examples = "\n".join(f"  - `{e}`" for e in self.verification.run_examples)
         return f"""你是产品经理。你的任务是验收本轮开发成果。
 
-1. 参考下方附带的需求文档
+1. 参考下方附带的需求文档（注意每条需求的优先级 P0/P1/P2）
 2. 运行测试命令确认全部通过：`{self.verification.test_command}`
 3. 执行以下示例命令，验证 CLI 行为符合预期：
 {examples}
-4. 检查命令输出和生成的文件是否正确
+4. 将关键命令输出保存为证据：`notes/accept-{{需求编号}}-output.txt`
 5. 逐条对照需求，判定是否满足
 
 输出文件：{round_dir}/acceptance.md
@@ -145,8 +214,21 @@ result 必须是 PASS 或 FAIL。如果 FAIL，逐条列出未通过的需求和
 round: {round_num}
 role: product
 phase: acceptance
-result: PASS 或 FAIL
+result: PASS / PARTIAL / FAIL
 timestamp: （当前时间 ISO 格式）
 ---
 
-result 必须是 PASS 或 FAIL。如果 FAIL，逐条列出未通过的需求和原因。"""
+## 验收结果判定规则
+
+逐条验证需求，每条给出：
+- 需求编号和标题
+- 优先级（P0/P1/P2）
+- 结果：PASS / FAIL
+- 证据（截图路径或命令输出文件路径）
+- FAIL 时附原因
+
+## result 总判定
+
+- **PASS**：所有需求均通过
+- **PARTIAL**：P0 全部通过，但存在 P1 或 P2 未通过
+- **FAIL**：任何 P0 未通过"""

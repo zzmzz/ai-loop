@@ -7,10 +7,21 @@
 
 ## [Unreleased]
 
+### Added
+- **流式 JSON 双向通信**：RoleRunner 从 `subprocess stdout` 文本模式重写为 `stream-json` 双向通信模式（`--output-format stream-json --input-format stream-json`），支持实时事件流解析和 `control_request` 自动应答
+- **人工协作模式**：新增 `human_decision` 配置项（`low` / `high`），`high` 模式下角色遇到歧义/多方案/架构决策时暂停并通过 `interaction_callback` 向用户提问，收到回答后继续执行
+- **Brain 内联上下文**：Brain 决策时直接读取 round_dir 中的产物文件内容内联到 prompt，无需依赖工具调用读取文件
+- **角色专属记忆增强**：`round_summary` 决策点输出 `memories` 字段，为 product/developer/reviewer 三个角色生成差异化的记忆摘要
+- **记忆压缩增强**：`compact_memories` 支持累积历史摘要——压缩时合并已有摘要与待压缩轮次，生成新的"历史摘要"章节
+- **docs/ 文档体系**：按业务域组织的 7 篇技术文档（architecture、orchestration、brain、roles、memory-context、config-reference、development）+ index.md 全局索引
+
 ### Changed
 - 删除根目录冗余模板文件（`templates/`），代码统一使用 `ai_loop/templates/`
-- 更新 README：新增 CLI/library 项目类型文档、完整配置参考、Round 001 功能介绍
-- 新增 CONTRIBUTING.md 和 CHANGELOG.md
+- README 精简为项目概述 + 快速开始，详细文档指向 `docs/`
+- CONTRIBUTING.md 精简为指向 `docs/development.md`
+
+### Removed
+- 移除 `HUMAN_DECISION_POINTS` 配置项，人工决策改为基于 `human_decision` 等级控制（`low` 全自动 / `high` 关键点暂停）
 
 ## [0.1.0] - 2026-04-13
 

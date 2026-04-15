@@ -84,7 +84,7 @@ class Orchestrator:
 
         self._runners = {
             "product": RoleRunner("product", ["Read", "Glob", "Grep", "Bash"]),
-            "developer": RoleRunner("developer", ["Read", "Glob", "Grep", "Edit", "Write", "Bash"]),
+            "developer": RoleRunner("developer", ["Read", "Glob", "Grep", "Edit", "Write", "Bash", "Skill", "Agent"]),
             "reviewer": RoleRunner("reviewer", ["Read", "Glob", "Grep", "Bash"]),
         }
 
@@ -162,7 +162,7 @@ class Orchestrator:
         for attempt in range(max_accept + 1):
             self._call_role("product:acceptance", rnd, round_dir, goals)
             decision = self._ask_brain("post_acceptance", round_dir=round_dir)
-            if decision.decision == "PASS":
+            if decision.decision in ("PASS", "PARTIAL_OK"):
                 break
             if decision.decision == "ESCALATE":
                 return self._escalate("acceptance", decision.reason)

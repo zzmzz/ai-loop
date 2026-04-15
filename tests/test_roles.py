@@ -299,7 +299,8 @@ class TestDeveloperRole:
         role = DeveloperRole()
         prompt = role.build_prompt("design", round_num=1, round_dir="/r/001", goals=["Fix login"])
         assert "design.md" in prompt
-        assert "待确认问题" in prompt
+        assert "/sdd:sketch" in prompt
+        assert "/sdd:specify" in prompt
         # REQ-1: should NOT instruct to read requirement.md
         assert "阅读需求文档" not in prompt
         assert "已附在下方" in prompt
