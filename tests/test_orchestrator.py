@@ -221,7 +221,7 @@ class TestOrchestratorCodeDigest:
         digest_path.write_text("# Code Digest\nProject has auth module")
 
         # Patch RoleRunner.call to capture the prompt passed to it
-        with patch.object(orch._runners["product"], "call") as mock_call:
+        with patch.object(orch._runners["product"], "call", return_value="mock result") as mock_call:
             orch._call_role(
                 "product:explore", 1,
                 orch._dir / "rounds" / "001",
@@ -308,7 +308,7 @@ class TestInteractionCallback:
         callback = MagicMock(return_value="user answer")
         orch = Orchestrator(ai_loop_dir, interaction_callback=callback)
 
-        with patch.object(orch._runners["product"], "call") as mock_call:
+        with patch.object(orch._runners["product"], "call", return_value="mock result") as mock_call:
             orch._call_role("product:explore", 1, ai_loop_dir / "rounds" / "001", ["goal"])
             mock_call.assert_called_once()
             prompt_arg = mock_call.call_args[0][0]
@@ -325,7 +325,7 @@ class TestInteractionCallback:
         callback = MagicMock()
         orch = Orchestrator(ai_loop_dir, interaction_callback=callback)
 
-        with patch.object(orch._runners["product"], "call") as mock_call:
+        with patch.object(orch._runners["product"], "call", return_value="mock result") as mock_call:
             orch._call_role("product:explore", 1, ai_loop_dir / "rounds" / "001", ["goal"])
             mock_call.assert_called_once()
             prompt_arg = mock_call.call_args[0][0]

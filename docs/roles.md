@@ -55,6 +55,10 @@ RoleRunner(role_name: str, allowed_tools: list[str])
 
 `allowed_tools` 映射到 `claude --allowedTools` 参数，实现工具权限隔离。
 
+### 调用统计（last_stats）
+
+每次 `call()` 返回前，会根据最近一条 `result` 事件更新 `last_stats`（`RoleRunner.last_stats` 属性）：`duration_ms`、`cost_usd`（对应事件字段 `total_cost_usd`）、`turns`（`num_turns`）。若尚无结果事件，则为零值。编排器用其写入 `EventLogger.log_ai_result`（见 [编排引擎](orchestration.md)）。
+
 ## 三角色详解
 
 ### ProductRole（产品经理）

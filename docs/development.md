@@ -56,6 +56,7 @@ addopts = "--cov=ai_loop --cov-report=term-missing --cov-fail-under=80"
 | `config.py` | `test_config.py` |
 | `context.py` | `test_context.py` |
 | `detect.py` | `test_detect.py` |
+| `logger.py` | `test_logger.py` |
 | `memory.py` | `test_memory.py` |
 | `orchestrator.py` | `test_orchestrator.py` |
 | `roles/*.py` | `test_roles.py` |

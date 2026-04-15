@@ -33,6 +33,7 @@ ai_loop/
 ├── config.py           → 配置加载校验（见 config-reference.md）
 ├── context.py          → 阶段间上下文注入（见 memory-context.md）
 ├── detect.py           → 项目自动检测
+├── logger.py           → 结构化事件日志（JSONL，见 orchestration.md）
 ├── memory.py           → 累积记忆管理（见 memory-context.md）
 ├── server.py           → Dev Server 生命周期
 ├── state.py            → 轮次/阶段/重试状态
@@ -54,6 +55,7 @@ ai_loop/
 ├── state.json                   # 📊 迭代状态（当前轮次、重试计数、历史摘要）
 ├── server.log                   # 🗑️ Dev Server 日志（调试 server.py 时才需要看）
 ├── code-digest.md               # 🗑️ 代码摘要缓存（Brain 每轮自动生成，不需要手动读）
+├── logs/                        # 📁 结构化事件日志（每轮一个 round-NNN.jsonl）
 │
 ├── rounds/                      # 📁 每轮的角色产出物
 │   ├── 001/
@@ -90,4 +92,5 @@ ai_loop/
 | 改上下文注入 (`context.py`) | `rounds/NNN/*.md` — 了解各阶段产出物的真实格式 |
 | 改角色 prompt (`roles/*.py`) | `rounds/NNN/*.md` — 了解角色实际输出是否符合 prompt 要求 |
 | 调试 Server (`server.py`) | `server.log` |
+| 改事件日志 (`logger.py`) 或排查编排轨迹 | `logs/round-*.jsonl` |
 | **其他情况** | **不需要读 .ai-loop/ 下的任何文件** |

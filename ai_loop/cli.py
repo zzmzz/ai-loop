@@ -8,6 +8,7 @@ import yaml
 
 from ai_loop.config import HUMAN_DECISION_LEVELS
 from ai_loop.detect import detect_project_config
+from ai_loop.logger import EventLogger
 from ai_loop.orchestrator import Orchestrator
 from ai_loop.state import LoopState, save_state
 import ai_loop.templates
@@ -21,6 +22,19 @@ def _interaction_callback(question_text: str) -> str:
     click.echo(question_text)
     click.echo()
     return click.prompt("你的回答")
+
+
+def _make_logging_callback(logger: EventLogger):
+    """Wrap _interaction_callback to also log the Q&A."""
+    def callback(question_text: str) -> str:
+        answer = _interaction_callback(question_text)
+        logger.log_user_interaction(
+            interaction_type="collaboration_qa",
+            question=question_text,
+            answer=answer,
+        )
+        return answer
+    return callback
 
 
 @click.group()
@@ -200,7 +214,11 @@ def run(project_path, goal, verbose, quiet, human_decision):
 
     show_details = verbose and not quiet
 
-    callback = _interaction_callback
+    event_logger = EventLogger(
+        log_dir=ai_dir / "logs",
+        round_num=1,
+    )
+    callback = _make_logging_callback(event_logger)
     orch = Orchestrator(ai_dir, verbose=show_details, interaction_callback=callback)
 
     # CLI 参数覆盖配置（仅运行时，不持久化）
@@ -213,6 +231,7 @@ def run(project_path, goal, verbose, quiet, human_decision):
 
     while True:
         round_num = orch.current_round
+        event_logger.set_round(round_num)
         click.echo(f"\n{'=' * 50}")
         click.echo(f"  AI Loop - Round {round_num} 开始")
         click.echo(f"{'=' * 50}\n")
@@ -226,11 +245,18 @@ def run(project_path, goal, verbose, quiet, human_decision):
             click.echo(f"  错误: {e}")
             click.echo(f"{'=' * 50}\n")
 
+            event_logger.log_error(context=f"round_{round_num}", error=str(e))
+
             action = click.prompt(
                 "请选择: [r]重试本轮 / [g]添加目标后重试 / [s]停止",
                 type=click.Choice(["r", "g", "s"], case_sensitive=False),
                 default="r",
                 show_choices=True,
+            )
+            event_logger.log_user_interaction(
+                interaction_type="error_recovery",
+                question="重试/添加目标/停止",
+                answer=action,
             )
             if action == "s":
                 click.echo("循环已停止。")
@@ -266,6 +292,12 @@ def run(project_path, goal, verbose, quiet, human_decision):
                 show_choices=True,
             )
 
+        event_logger.log_user_interaction(
+            interaction_type="round_action",
+            question="继续/添加目标/停止",
+            answer=action,
+        )
+
         if action == "s":
             click.echo("循环已停止。")
             break
@@ -273,6 +305,8 @@ def run(project_path, goal, verbose, quiet, human_decision):
             new_goal = click.prompt("输入新目标")
             orch.add_goal(new_goal)
             click.echo(f"已添加目标: {new_goal}")
+
+    event_logger.close()
 
 
 if __name__ == "__main__":

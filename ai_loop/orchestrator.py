@@ -8,6 +8,7 @@ from ai_loop.state import LoopState, load_state, save_state
 from ai_loop.server import DevServer
 from ai_loop.brain import Brain, BrainDecision
 from ai_loop.memory import MemoryManager
+from ai_loop.logger import EventLogger
 from ai_loop.roles.base import RoleRunner
 from ai_loop.roles.product import ProductRole
 from ai_loop.roles.developer import DeveloperRole
@@ -56,6 +57,12 @@ class Orchestrator:
         self._verbose = verbose
         self._context_collector = ContextCollector()
         self._interaction_callback = interaction_callback
+
+        self._logger = EventLogger(
+            log_dir=ai_loop_dir / "logs",
+            round_num=self._state.current_round,
+        )
+        self._last_phase = "init"
 
         self._ensure_workspaces()
 
@@ -114,6 +121,8 @@ class Orchestrator:
 
     def run_single_round(self) -> str:
         rnd = self._state.current_round
+        self._logger.set_round(rnd)
+        self._last_phase = "start"
         round_dir = self._state.round_dir(self._dir)
         round_dir.mkdir(parents=True, exist_ok=True)
         goals = self._config.goals
@@ -192,6 +201,9 @@ class Orchestrator:
         self._state.complete_round(summary)
         save_state(self._state, self._state_file)
 
+        self._logger.log_phase_transition(from_phase=self._last_phase, to_phase="round_complete")
+        self._logger.close()
+
         return summary
 
     def _log(self, msg: str) -> None:
@@ -207,6 +219,12 @@ class Orchestrator:
         }
         role = role_map[role_name]
         self._log(f"\n\033[1m▶ [{role_name.upper()}] {phase}\033[0m")
+        self._logger.log_phase_transition(
+            from_phase=self._last_phase,
+            to_phase=role_phase,
+        )
+        self._last_phase = role_phase
+
         context = self._context_collector.collect(role_phase, round_dir)
         if role_phase == "product:explore":
             digest_path = self._dir / "code-digest.md"
@@ -221,16 +239,32 @@ class Orchestrator:
         else:
             callback = None
 
+        self._logger.log_ai_call(role_name, phase, prompt)
+
         workspace = str(self._dir / "workspaces" / role_name)
-        self._runners[role_name].call(
+        runner = self._runners[role_name]
+        result = runner.call(
             prompt, cwd=workspace, verbose=self._verbose,
             interaction_callback=callback,
+        )
+
+        stats = runner.last_stats
+        self._logger.log_ai_result(
+            role=role_name, phase=phase, result=result,
+            duration_ms=stats["duration_ms"],
+            cost_usd=stats["cost_usd"],
+            turns=stats["turns"],
         )
 
     def _ask_brain(self, decision_point: str, round_dir: Path) -> BrainDecision:
         self._log(f"\n\033[2m🧠 Brain: {decision_point}\033[0m")
         decision = self._brain.decide(decision_point, round_dir=round_dir)
         self._log(f"\033[2m   → {decision.decision}: {decision.reason}\033[0m")
+        self._logger.log_brain_decision(
+            decision_point=decision_point,
+            decision=decision.decision,
+            reason=decision.reason,
+        )
         return decision
 
     def _server_start(self) -> None:
@@ -253,6 +287,8 @@ class Orchestrator:
             self._log(f"\033[33m⚠ Dev server 停止失败: {e}\033[0m")
 
     def _escalate(self, context: str, reason: str) -> str:
+        self._logger.log_error(context=context, error=f"ESCALATE: {reason}")
+        self._logger.close()
         return f"ESCALATE:{context}:{reason}"
 
     def _update_code_digest(self, round_dir: Path) -> None:

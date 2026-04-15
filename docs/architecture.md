@@ -52,6 +52,7 @@
 | **AiLoopConfig** | `config.py` | 配置加载校验，支持 web/cli/library | [配置参考](config-reference.md) |
 | **LoopState** | `state.py` | 轮次/阶段/重试状态持久化 | — |
 | **DevServer** | `server.py` | Dev Server 启动/健康检查/停止 | — |
+| **EventLogger** | `logger.py` | 每轮 JSONL 结构化事件（阶段、AI 调用/结果、Brain、用户交互、错误） | [编排引擎](orchestration.md) |
 | **detect** | `detect.py` | 通过 Claude Code 自动检测项目配置 | — |
 
 ## 运行时依赖关系
@@ -60,6 +61,7 @@
 CLI (cli.py)
  └→ Orchestrator
      ├→ AiLoopConfig + LoopState     ← 配置与状态
+     ├→ EventLogger                   ← `.ai-loop/logs/round-*.jsonl` 事件流
      ├→ DevServer (可选)              ← web 项目才需要
      ├→ Brain                         ← 决策（内部有独立 RoleRunner）
      ├→ MemoryManager                 ← 记忆管理
@@ -116,6 +118,7 @@ Round N 开始
 ├── state.json                  # 迭代状态（当前轮次、重试计数、历史）
 ├── server.log                  # Dev Server 日志
 ├── code-digest.md              # 代码结构摘要（Brain 生成，每轮更新）
+├── logs/                       # 结构化事件日志（每轮 round-NNN.jsonl）
 ├── rounds/
 │   ├── 001/
 │   │   ├── requirement.md      # 需求文档（Product 输出）

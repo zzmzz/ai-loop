@@ -65,6 +65,7 @@ class RoleRunner:
         self._send_message(proc, prompt)
 
         final_result = ""
+        self._last_stats = {"duration_ms": 0, "cost_usd": 0, "turns": 0}
         try:
             for line in proc.stdout:
                 line = line.strip()
@@ -80,12 +81,16 @@ class RoleRunner:
                 if etype == "control_request":
                     self._handle_control_request(proc, event)
                 elif etype == "result":
+                    self._last_stats = {
+                        "duration_ms": event.get("duration_ms", 0),
+                        "cost_usd": event.get("total_cost_usd", 0),
+                        "turns": event.get("num_turns", 0),
+                    }
                     result_text = event.get("result", "")
                     if interaction_callback and self._has_needs_input(result_text):
                         question = self._extract_question(result_text)
                         answer = interaction_callback(question)
                         self._send_message(proc, answer)
-                        # Continue reading for next result
                     else:
                         final_result = result_text
                         break
@@ -109,6 +114,11 @@ class RoleRunner:
                 f"exit={proc.returncode}): {stderr[:500]}"
             )
         return final_result
+
+    @property
+    def last_stats(self) -> dict:
+        """Stats from the most recent call: duration_ms, cost_usd, turns."""
+        return getattr(self, "_last_stats", {"duration_ms": 0, "cost_usd": 0, "turns": 0})
 
     def _send_message(self, proc, content: str) -> None:
         msg = json.dumps({

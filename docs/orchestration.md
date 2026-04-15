@@ -15,10 +15,11 @@ Orchestrator(ai_loop_dir: Path, verbose: bool = False,
 1. 加载 `config.yaml` → `AiLoopConfig`
 2. 加载 `state.json` → `LoopState`
 3. 创建 `MemoryManager`、`ContextCollector`
-4. 确保 4 个工作空间目录存在（orchestrator/product/developer/reviewer），从 templates/ 复制初始 CLAUDE.md
-5. 按配置决定是否创建 `DevServer`（web 项目需要，cli/library 不需要）
-6. 创建 `Brain`（使用 orchestrator 工作空间）
-7. 创建三角色实例和对应的 `RoleRunner`（工具权限各不同）
+4. 创建 `EventLogger`（`ai_loop_dir / "logs"`，文件名随当前轮次 `round-NNN.jsonl`），用于记录本轮编排事件
+5. 确保 4 个工作空间目录存在（orchestrator/product/developer/reviewer），从 templates/ 复制初始 CLAUDE.md
+6. 按配置决定是否创建 `DevServer`（web 项目需要，cli/library 不需要）
+7. 创建 `Brain`（使用 orchestrator 工作空间）
+8. 创建三角色实例和对应的 `RoleRunner`（工具权限各不同）
 
 ### 工具权限分配
 
@@ -103,7 +104,24 @@ Brain.round_summary(...)                 ← 生成角色专属记忆
 _update_all_memories(...)                ← 写入各角色 CLAUDE.md
 _update_code_digest(...)                 ← 更新 code-digest.md
 state.complete_round(summary)            ← 推进状态到下一轮
+EventLogger                              ← 记录收尾阶段 transition 后 close()
 ```
+
+## 事件日志（EventLogger）
+
+`ai_loop/logger.py` 中的 `EventLogger` 将本轮关键事件以 **JSONL** 追加写入 `.ai-loop/logs/round-{轮次:03d}.jsonl`（UTF-8）。Orchestrator 在 `run_single_round()` 开头 `set_round`，在角色调用、Brain 决策、阶段切换处写入；轮次正常结束或 `_escalate()` 路径上会 `close()` 释放文件句柄。
+
+常见 `event_type` 字段取值：
+
+| `event_type` | 含义 |
+|----------------|------|
+| `phase_transition` | `from_phase` → `to_phase`（含角色阶段标识，如 `product:explore`） |
+| `ai_call` / `ai_result` | 角色调用前后；`ai_result` 含 `duration_ms`、`cost_usd`、`turns`（来自 `RoleRunner.last_stats`）及结果预览 |
+| `brain_decision` | 决策点、结论与理由 |
+| `user_interaction` | CLI 侧用户问答（如协作问答、轮次结束后的继续/加目标/停止） |
+| `error` | 异常上下文与错误摘要 |
+
+`ai-loop run` 还会单独构造一个 `EventLogger`（同一 `logs/` 目录），在 CLI 提示词交互与错误恢复分支上额外记录 `user_interaction` / `error`，与 Orchestrator 内日志共用目录、按轮次分文件。
 
 ## 人工协作模式
 
@@ -151,8 +169,9 @@ def _call_role(self, role_phase, rnd, round_dir, goals):
     if config.human_decision == "high":
         prompt += HUMAN_COLLABORATION_INSTRUCTION
 
-    # 5. RoleRunner 执行调用
-    runner.call(prompt, cwd=workspace, verbose=..., interaction_callback=...)
+    # 5. RoleRunner 执行调用；根据 stream-json 的 result 事件更新 last_stats
+    result = runner.call(prompt, cwd=workspace, verbose=..., interaction_callback=...)
+    # Orchestrator 将 result 与 runner.last_stats 写入 EventLogger
 ```
 
 ## Dev Server 生命周期
