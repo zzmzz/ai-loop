@@ -85,3 +85,49 @@ class TestLoadConfig:
 
         with pytest.raises(ValueError, match="verification"):
             load_config(config_file)
+
+    def test_memory_window_default_value(self, tmp_path: Path, sample_config: dict):
+        """REQ-3: memory_window should default to 5."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(yaml.dump(sample_config))
+
+        cfg = load_config(config_file)
+
+        assert cfg.limits.memory_window == 5
+
+    def test_memory_window_loaded_from_config(self, tmp_path: Path, sample_config: dict):
+        """REQ-3: memory_window should be loadable from config."""
+        sample_config["limits"]["memory_window"] = 10
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(yaml.dump(sample_config))
+
+        cfg = load_config(config_file)
+
+        assert cfg.limits.memory_window == 10
+
+
+class TestHumanDecisionConfig:
+    def test_default_human_decision_is_low(self, tmp_path: Path, sample_config: dict):
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(yaml.dump(sample_config))
+
+        cfg = load_config(config_file)
+
+        assert cfg.human_decision == "low"
+
+    def test_human_decision_high_loaded(self, tmp_path: Path, sample_config: dict):
+        sample_config["human_decision"] = "high"
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(yaml.dump(sample_config))
+
+        cfg = load_config(config_file)
+
+        assert cfg.human_decision == "high"
+
+    def test_invalid_human_decision_raises(self, tmp_path: Path, sample_config: dict):
+        sample_config["human_decision"] = "invalid"
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(yaml.dump(sample_config))
+
+        with pytest.raises(ValueError, match="Invalid human_decision"):
+            load_config(config_file)

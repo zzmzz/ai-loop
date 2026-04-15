@@ -29,6 +29,7 @@ class BrowserConfig:
 class LimitsConfig:
     max_review_retries: int = 3
     max_acceptance_retries: int = 2
+    memory_window: int = 5
 
 
 @dataclass
@@ -39,6 +40,9 @@ class VerificationConfig:
     run_examples: list[str] = field(default_factory=list)  # cli
 
 
+HUMAN_DECISION_LEVELS = ("low", "high")
+
+
 @dataclass
 class AiLoopConfig:
     project: ProjectConfig
@@ -47,6 +51,7 @@ class AiLoopConfig:
     server: Optional[ServerConfig] = None
     browser: Optional[BrowserConfig] = None
     limits: LimitsConfig = field(default_factory=LimitsConfig)
+    human_decision: str = "low"
 
 
 def _require(data: dict, *keys: str, context: str = "") -> None:
@@ -59,6 +64,10 @@ def _require(data: dict, *keys: str, context: str = "") -> None:
 def load_config(path: Path) -> AiLoopConfig:
     if not path.exists():
         raise FileNotFoundError(f"Config file not found: {path}")
+
+    # .ai-loop/config.yaml -> project root is the parent of .ai-loop
+    config_dir = path.resolve().parent  # .ai-loop/
+    project_root = config_dir.parent     # project root
 
     with open(path) as f:
         raw = yaml.safe_load(f)
@@ -97,12 +106,23 @@ def load_config(path: Path) -> AiLoopConfig:
     else:
         raise ValueError("Missing required config: either 'verification' or 'browser.base_url' must be provided")
 
+    human_decision = raw.get("human_decision", "low")
+    if human_decision not in HUMAN_DECISION_LEVELS:
+        raise ValueError(
+            f"Invalid human_decision level: {human_decision!r}, "
+            f"must be one of {HUMAN_DECISION_LEVELS}"
+        )
+
     lim = raw.get("limits", {})
+
+    # Resolve relative project path against project root
+    raw_path = proj["path"]
+    resolved_path = str((project_root / raw_path).resolve())
 
     return AiLoopConfig(
         project=ProjectConfig(
             name=proj["name"],
-            path=proj["path"],
+            path=resolved_path,
             description=proj.get("description", ""),
         ),
         goals=raw.get("goals", []),
@@ -112,5 +132,7 @@ def load_config(path: Path) -> AiLoopConfig:
         limits=LimitsConfig(
             max_review_retries=lim.get("max_review_retries", 3),
             max_acceptance_retries=lim.get("max_acceptance_retries", 2),
+            memory_window=lim.get("memory_window", 5),
         ),
+        human_decision=human_decision,
     )
