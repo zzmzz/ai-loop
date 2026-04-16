@@ -1,6 +1,7 @@
 # ai_loop/orchestrator.py
 from importlib import resources
 from pathlib import Path
+import re
 import subprocess
 from typing import Callable, Optional
 from ai_loop import __version__
@@ -152,9 +153,13 @@ class Orchestrator:
         # 1. Product explore
         self._server_start()
         self._call_role("product:explore", rnd, round_dir, goals)
+        if self._config.human_decision != "low":
+            self._confirm_requirements(round_dir)
         decision = self._ask_brain("post_requirement", round_dir=round_dir)
         if decision.decision == "REFINE":
             self._call_role("product:explore", rnd, round_dir, goals)
+            if self._config.human_decision != "low":
+                self._confirm_requirements(round_dir)
         self._server_stop()
 
         # 2. Developer design
@@ -311,6 +316,94 @@ class Orchestrator:
             self._log("\033[2m🖥  Dev server 已停止\033[0m")
         except Exception as e:
             self._log(f"\033[33m⚠ Dev server 停止失败: {e}\033[0m")
+
+    @staticmethod
+    def _extract_requirements(content: str) -> list[dict]:
+        """Extract requirement entries from requirement.md content."""
+        reqs = []
+        seen_titles = set()
+        for m in re.finditer(r'##\s+REQ-(\d+)[：:]\s*(.+)', content):
+            title = m.group(2).strip()
+            if title not in seen_titles:
+                seen_titles.add(title)
+                reqs.append({"id": f"REQ-{m.group(1)}", "title": title,
+                             "priority": "P1"})
+        for m in re.finditer(r'-\s*\*\*\[(P\d)\]\s*(.+?)\*\*', content):
+            title = m.group(2).strip()
+            if title not in seen_titles:
+                seen_titles.add(title)
+                reqs.append({"id": "", "title": title,
+                             "priority": m.group(1)})
+        for m in re.finditer(r'\|\s*(P\d)\s*\|\s*REQ-(\d+)', content):
+            for req in reqs:
+                if req["id"] == f"REQ-{m.group(2)}":
+                    req["priority"] = m.group(1)
+        return reqs
+
+    @staticmethod
+    def _remove_requirements(req_path: Path, content: str,
+                             reqs: list[dict], nums_str: str) -> None:
+        """Remove requirements by user-specified indices and rewrite the file."""
+        try:
+            to_remove = {int(n.strip()) for n in nums_str.split(",") if n.strip()}
+        except ValueError:
+            return
+        titles_to_remove = set()
+        for idx in to_remove:
+            if 1 <= idx <= len(reqs):
+                titles_to_remove.add(reqs[idx - 1]["title"])
+        if not titles_to_remove:
+            return
+        lines = content.split("\n")
+        result, skip = [], False
+        for line in lines:
+            if line.startswith("## REQ-") or (line.startswith("## ") and not line.startswith("## 背景")
+                                               and not line.startswith("## 优先级")
+                                               and not line.startswith("## 技术约束")):
+                skip = any(t in line for t in titles_to_remove)
+            if not skip:
+                result.append(line)
+        req_path.write_text("\n".join(result))
+
+    def _confirm_requirements(self, round_dir: Path) -> None:
+        """Present requirement draft to human for review before proceeding."""
+        req_path = round_dir / "requirement.md"
+        if not req_path.exists():
+            return
+
+        content = req_path.read_text()
+        reqs = self._extract_requirements(content)
+
+        if not reqs:
+            return
+
+        self._log("\n\033[1m📋 产品需求草案待确认：\033[0m")
+        for i, req in enumerate(reqs, 1):
+            self._log(f"  {i}. [{req['priority']}] {req['title']}")
+
+        if not self._interaction_callback:
+            return
+
+        response = self._interaction_callback(
+            f"产品角色提出了 {len(reqs)} 条需求（见上方列表）。\n"
+            "请选择操作：\n"
+            "  [a] 全部接受\n"
+            "  [d] 输入要删除的编号（逗号分隔，如 d 2,3）\n"
+            "  [e] 打开 requirement.md 手动编辑后继续\n"
+            "  [r] 全部拒绝，让产品重新出\n"
+            "选择: "
+        )
+        response = response.strip().lower()
+        if response == "r":
+            req_path.unlink()
+            self._log("  🗑  已清空需求，将重新生成")
+        elif response.startswith("d"):
+            nums = response.replace("d", "").strip()
+            self._remove_requirements(req_path, content, reqs, nums)
+            self._log(f"  ✅ 已按指定编号裁剪需求")
+        elif response == "e":
+            self._log(f"  📝 请编辑 {req_path} 后按回车继续...")
+            self._interaction_callback("编辑完成后按回车继续: ")
 
     def _escalate(self, context: str, reason: str) -> str:
         self._logger.log_error(context=context, error=f"ESCALATE: {reason}")

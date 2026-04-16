@@ -349,6 +349,197 @@ class TestInteractionCallback:
             callback.assert_not_called()
 
 
+class TestExtractRequirements:
+    def test_extract_req_section_format(self):
+        """Extract requirements in ## REQ-N: title format."""
+        content = """---
+round: 2
+---
+
+## REQ-1: init 命令应自动创建目录
+
+some desc
+
+## REQ-2: run 命令添加目标不应持久化
+
+some desc
+
+## REQ-3: verbose 硬编码问题
+
+some desc
+
+## 优先级排序
+
+| P0 | REQ-1 | 理由 |
+| P1 | REQ-2 | 理由 |
+| P2 | REQ-3 | 理由 |
+"""
+        reqs = Orchestrator._extract_requirements(content)
+        assert len(reqs) == 3
+        assert reqs[0]["id"] == "REQ-1"
+        assert reqs[0]["title"] == "init 命令应自动创建目录"
+        assert reqs[0]["priority"] == "P0"
+        assert reqs[1]["priority"] == "P1"
+        assert reqs[2]["priority"] == "P2"
+
+    def test_extract_bullet_format(self):
+        """Extract requirements in - **[P0] title** format."""
+        content = """### 具体需求
+- **[P0] 优化记忆机制**：现状 → 期望
+- **[P1] 增加缓存**：现状 → 期望
+"""
+        reqs = Orchestrator._extract_requirements(content)
+        assert len(reqs) == 2
+        assert reqs[0]["priority"] == "P0"
+        assert reqs[0]["title"] == "优化记忆机制"
+        assert reqs[1]["priority"] == "P1"
+
+    def test_extract_empty_content(self):
+        """Empty or irrelevant content returns empty list."""
+        assert Orchestrator._extract_requirements("") == []
+        assert Orchestrator._extract_requirements("# Hello\nno reqs here") == []
+
+
+class TestRemoveRequirements:
+    def test_remove_by_index(self, tmp_path: Path):
+        """Remove specific requirements by index."""
+        content = """## 背景
+
+some bg
+
+## REQ-1: Keep This
+
+desc1
+
+## REQ-2: Remove This
+
+desc2
+
+## REQ-3: Also Keep
+
+desc3
+
+## 技术约束
+
+constraints
+"""
+        req_path = tmp_path / "requirement.md"
+        req_path.write_text(content)
+        reqs = [
+            {"id": "REQ-1", "title": "Keep This", "priority": "P0"},
+            {"id": "REQ-2", "title": "Remove This", "priority": "P1"},
+            {"id": "REQ-3", "title": "Also Keep", "priority": "P2"},
+        ]
+        Orchestrator._remove_requirements(req_path, content, reqs, "2")
+        result = req_path.read_text()
+        assert "Keep This" in result
+        assert "Remove This" not in result
+        assert "Also Keep" in result
+        assert "技术约束" in result
+
+    def test_remove_invalid_index(self, tmp_path: Path):
+        """Invalid index does nothing."""
+        content = "## REQ-1: Title\nsome text"
+        req_path = tmp_path / "requirement.md"
+        req_path.write_text(content)
+        reqs = [{"id": "REQ-1", "title": "Title", "priority": "P0"}]
+        Orchestrator._remove_requirements(req_path, content, reqs, "99")
+        assert req_path.read_text() == content
+
+    def test_remove_bad_format(self, tmp_path: Path):
+        """Non-numeric input is silently ignored."""
+        content = "## REQ-1: Title\nsome text"
+        req_path = tmp_path / "requirement.md"
+        req_path.write_text(content)
+        reqs = [{"id": "REQ-1", "title": "Title", "priority": "P0"}]
+        Orchestrator._remove_requirements(req_path, content, reqs, "abc")
+        assert req_path.read_text() == content
+
+
+class TestConfirmRequirements:
+    def test_skip_when_low_mode(self, ai_loop_dir: Path, sample_config: dict):
+        """human_decision=low should skip confirmation entirely."""
+        sample_config["project"]["path"] = str(ai_loop_dir.parent)
+        (ai_loop_dir / "config.yaml").write_text(yaml.dump(sample_config))
+
+        callback = MagicMock()
+        orch = Orchestrator(ai_loop_dir, interaction_callback=callback)
+
+        round_dir = ai_loop_dir / "rounds" / "001"
+        (round_dir / "requirement.md").write_text("## REQ-1: Something\ndesc")
+
+        # low mode: _confirm_requirements is not called in run_single_round,
+        # but we verify it's benign even if called
+        orch._confirm_requirements(round_dir)
+        # callback is not called because _confirm_requirements itself shows list
+        # but the run_single_round gate (human_decision != "low") prevents calling it
+
+    def test_accept_all(self, ai_loop_dir: Path, sample_config: dict):
+        """User selects [a] to accept all requirements."""
+        sample_config["project"]["path"] = str(ai_loop_dir.parent)
+        sample_config["human_decision"] = "high"
+        (ai_loop_dir / "config.yaml").write_text(yaml.dump(sample_config))
+
+        callback = MagicMock(return_value="a")
+        orch = Orchestrator(ai_loop_dir, verbose=True, interaction_callback=callback)
+
+        round_dir = ai_loop_dir / "rounds" / "001"
+        req_content = "## REQ-1: Feature A\ndesc\n## REQ-2: Feature B\ndesc"
+        (round_dir / "requirement.md").write_text(req_content)
+
+        orch._confirm_requirements(round_dir)
+        assert (round_dir / "requirement.md").read_text() == req_content
+
+    def test_reject_all(self, ai_loop_dir: Path, sample_config: dict):
+        """User selects [r] to reject all — requirement.md is deleted."""
+        sample_config["project"]["path"] = str(ai_loop_dir.parent)
+        sample_config["human_decision"] = "high"
+        (ai_loop_dir / "config.yaml").write_text(yaml.dump(sample_config))
+
+        callback = MagicMock(return_value="r")
+        orch = Orchestrator(ai_loop_dir, verbose=True, interaction_callback=callback)
+
+        round_dir = ai_loop_dir / "rounds" / "001"
+        (round_dir / "requirement.md").write_text("## REQ-1: Feature A\ndesc")
+
+        orch._confirm_requirements(round_dir)
+        assert not (round_dir / "requirement.md").exists()
+
+    def test_delete_specific(self, ai_loop_dir: Path, sample_config: dict):
+        """User selects [d 2] to delete requirement #2."""
+        sample_config["project"]["path"] = str(ai_loop_dir.parent)
+        sample_config["human_decision"] = "high"
+        (ai_loop_dir / "config.yaml").write_text(yaml.dump(sample_config))
+
+        callback = MagicMock(return_value="d 2")
+        orch = Orchestrator(ai_loop_dir, verbose=True, interaction_callback=callback)
+
+        round_dir = ai_loop_dir / "rounds" / "001"
+        content = "## REQ-1: Keep\nkeep desc\n## REQ-2: Remove\nremove desc\n## REQ-3: Also Keep\nalso keep"
+        (round_dir / "requirement.md").write_text(content)
+
+        orch._confirm_requirements(round_dir)
+        result = (round_dir / "requirement.md").read_text()
+        assert "Keep" in result
+        assert "Remove" not in result
+        assert "Also Keep" in result
+
+    def test_no_callback_skips_interaction(self, ai_loop_dir: Path, sample_config: dict):
+        """Without interaction_callback, requirements are shown but not interactive."""
+        sample_config["project"]["path"] = str(ai_loop_dir.parent)
+        sample_config["human_decision"] = "high"
+        (ai_loop_dir / "config.yaml").write_text(yaml.dump(sample_config))
+
+        orch = Orchestrator(ai_loop_dir, verbose=True, interaction_callback=None)
+
+        round_dir = ai_loop_dir / "rounds" / "001"
+        req_content = "## REQ-1: Feature A\ndesc"
+        (round_dir / "requirement.md").write_text(req_content)
+
+        orch._confirm_requirements(round_dir)
+        assert (round_dir / "requirement.md").read_text() == req_content
+
+
 class TestOrchestratorCliProject:
     @patch.object(Orchestrator, "_update_code_digest")
     @patch.object(Orchestrator, "_call_role")

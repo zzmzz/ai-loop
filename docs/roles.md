@@ -91,7 +91,9 @@ ProductRole(verification: VerificationConfig, knowledge_dir: Path)
 
 **需求文档强制结构**：
 - YAML frontmatter（round, role, phase, result, timestamp）
-- 问题描述、目标用户、具体需求（P0/P1/P2 分级）、不做的事情、验收标准
+- 问题描述、目标用户、具体需求（P0/P1/P2 分级）、不做的事情、验收标准、延迟池（可选）
+
+**需求数量限制**：每轮最多 3 条需求（1 条 P0 + 至多 2 条 P1/P2）。超出 3 条的需求写入末尾的"延迟池"章节（一句话描述 + 优先级），供下一轮参考。此限制在 web 和 cli 两种 explore prompt 中均生效。
 
 **"强制问题"机制**：Product 在写需求前必须先回答 4 个问题（目标用户、最大痛点、最窄切入点、验证方式），确保需求聚焦而非发散。
 

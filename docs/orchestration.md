@@ -41,13 +41,27 @@ Orchestrator(ai_loop_dir: Path, verbose: bool = False,
 ```
 _server_start()                          ← web 项目启动 dev server
 _call_role("product:explore", ...)       ← Product 体验产品、写 requirement.md
+                                            （每轮最多 3 条需求，超出写入"延迟池"）
+_confirm_requirements(round_dir)         ← 人工确认卡点（human_decision != "low" 时触发）
+                                            a=全部接受 / d=按编号删除 / e=手动编辑 / r=全部拒绝
 _ask_brain("post_requirement", ...)      ← Brain 判断需求是否清晰
   PROCEED → 继续
-  REFINE  → Product 重新探索
+  REFINE  → Product 重新探索 → 再次人工确认
 _server_stop()
 ```
 
 Product 探索时会自动注入 `product-knowledge/index.md`（如存在）与 `code-digest.md`（如存在），减少重复读代码、便于按业务域恢复产品认知。
+
+**需求数量限制**：Product 的 explore prompt 强制每轮最多输出 3 条需求（1 条 P0 + 至多 2 条 P1/P2），超出的需求写入 requirement.md 末尾的"延迟池"章节供下轮参考。
+
+**人工确认流程**（`_confirm_requirements`）：当 `human_decision != "low"` 时，在 requirement.md 写入后、Brain post_requirement 决策前插入确认卡点。Orchestrator 从 requirement.md 中提取需求条目并展示列表，用户可选择：
+
+| 操作 | 说明 |
+|------|------|
+| `a` | 全部接受，继续流程 |
+| `d <编号>` | 按编号删除指定需求（如 `d 2,3`），裁剪后继续 |
+| `e` | 暂停流程，用户手动编辑 requirement.md 后按回车继续 |
+| `r` | 全部拒绝，删除 requirement.md 并让 Product 重新生成 |
 
 ### 阶段 2：技术设计
 

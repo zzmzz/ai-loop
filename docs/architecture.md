@@ -78,9 +78,9 @@ CLI (cli.py)
 ```
 Round N 开始
 │
-├─ 1. Product 探索  ─→ requirement.md  ─→ Brain: post_requirement
-│      (启动 Server)                        ├─ PROCEED → 继续
-│                                           └─ REFINE  → Product 重写
+├─ 1. Product 探索  ─→ requirement.md  ─→ 人工确认卡点*  ─→ Brain: post_requirement
+│      (启动 Server)   (每轮最多3条需求)    (* human_decision   ├─ PROCEED → 继续
+│                                            != "low" 时触发)  └─ REFINE  → Product 重写 → 再确认
 │
 ├─ 2. Developer 设计 ─→ design.md      ─→ Brain: post_design
 │      (注入 requirement.md)                ├─ PROCEED → 继续
