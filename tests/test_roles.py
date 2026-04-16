@@ -135,8 +135,8 @@ class TestRoleRunner:
         mock_proc.stdin.close.assert_called_once()
 
     @patch("ai_loop.roles.base.subprocess.Popen")
-    def test_verbose_flag_conditional(self, mock_popen: MagicMock):
-        """--verbose should only appear in cmd when verbose=True."""
+    def test_verbose_always_present(self, mock_popen: MagicMock):
+        """--verbose must always be in cmd (required by stream-json mode)."""
         events = ['{"type": "result", "result": "done", "session_id": "s1"}']
         mock_proc = MagicMock()
         mock_proc.stdout.__iter__ = MagicMock(return_value=iter(events))
@@ -146,23 +146,10 @@ class TestRoleRunner:
 
         runner = RoleRunner(role_name="dev", allowed_tools=["Read"])
 
-        # verbose=False: --verbose should NOT be in cmd
+        # Even with verbose=False, --verbose must be present for stream-json
         runner.call("test", cwd="/tmp", verbose=False)
-        cmd_false = mock_popen.call_args[0][0]
-        assert "--verbose" not in cmd_false
-
-        # Reset mock for verbose=True
-        mock_popen.reset_mock()
-        mock_proc2 = MagicMock()
-        events2 = ['{"type": "result", "result": "done", "session_id": "s2"}']
-        mock_proc2.stdout.__iter__ = MagicMock(return_value=iter(events2))
-        mock_proc2.wait.return_value = None
-        mock_proc2.returncode = 0
-        mock_popen.return_value = mock_proc2
-
-        runner.call("test", cwd="/tmp", verbose=True)
-        cmd_true = mock_popen.call_args[0][0]
-        assert "--verbose" in cmd_true
+        cmd = mock_popen.call_args[0][0]
+        assert "--verbose" in cmd, "stream-json mode requires --verbose unconditionally"
 
     @patch("ai_loop.roles.base.subprocess.Popen")
     def test_call_nonzero_exit_raises(self, mock_popen: MagicMock):

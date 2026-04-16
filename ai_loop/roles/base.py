@@ -45,10 +45,9 @@ class RoleRunner:
             "claude",
             "--output-format", "stream-json",
             "--input-format", "stream-json",
+            "--verbose",
             "--permission-prompt-tool", "stdio",
         ]
-        if verbose:
-            cmd.append("--verbose")
         if self.allowed_tools:
             cmd += ["--allowedTools", ",".join(self.allowed_tools)]
 

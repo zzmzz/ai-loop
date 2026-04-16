@@ -64,10 +64,16 @@ class TestIntegration:
         mock_server_popen.return_value = MagicMock(poll=MagicMock(return_value=None))
         mock_get.return_value = MagicMock(status_code=200)
 
+        # Capture all CLI commands passed to Popen
+        captured_cmds = []
+
         # Mock RoleRunner Popen - return stream-json result events.
         # The mock captures stdin writes to detect Brain decision calls
         # and returns appropriate JSON responses.
         def make_mock_proc(*args, **kwargs):
+            if args:
+                captured_cmds.append(args[0])
+
             mock_proc = MagicMock()
             captured_input = []
 
@@ -122,3 +128,14 @@ class TestIntegration:
         for role in ("product", "developer", "reviewer"):
             claude_md = ai_dir / "workspaces" / role / "CLAUDE.md"
             assert "Round 001" in claude_md.read_text()
+
+        # All Claude CLI invocations (roles + brain) must use stream-json + --verbose
+        claude_cmds = [cmd for cmd in captured_cmds
+                       if isinstance(cmd, list) and cmd[0] == "claude"]
+        assert len(claude_cmds) > 0, "No Claude CLI commands were captured"
+        for cmd in claude_cmds:
+            assert "--output-format" in cmd, f"Missing --output-format in {cmd}"
+            assert "--verbose" in cmd, (
+                f"Missing --verbose in CLI command: {cmd}. "
+                "stream-json mode requires --verbose."
+            )
