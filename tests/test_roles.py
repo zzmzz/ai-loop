@@ -179,7 +179,7 @@ from ai_loop.config import VerificationConfig
 class TestProductRole:
     def test_explore_prompt_includes_base_url(self):
         verification = VerificationConfig(type="web", base_url="http://localhost:3000")
-        role = ProductRole(verification=verification)
+        role = ProductRole(verification=verification, knowledge_dir=Path("/tmp/pk"))
         prompt = role.build_prompt("explore", round_num=1, round_dir="/r/001", goals=["Fix login"])
         assert "http://localhost:3000" in prompt
         assert "requirement.md" in prompt
@@ -187,7 +187,7 @@ class TestProductRole:
 
     def test_acceptance_prompt_includes_requirement(self):
         verification = VerificationConfig(type="web", base_url="http://localhost:3000")
-        role = ProductRole(verification=verification)
+        role = ProductRole(verification=verification, knowledge_dir=Path("/tmp/pk"))
         prompt = role.build_prompt("acceptance", round_num=1, round_dir="/r/001", goals=["Fix login"])
         assert "acceptance.md" in prompt
         assert "PASS" in prompt and "FAIL" in prompt
@@ -197,7 +197,7 @@ class TestProductRole:
 
     def test_clarify_prompt(self):
         verification = VerificationConfig(type="web", base_url="http://localhost:3000")
-        role = ProductRole(verification=verification)
+        role = ProductRole(verification=verification, knowledge_dir=Path("/tmp/pk"))
         prompt = role.build_prompt("clarify", round_num=1, round_dir="/r/001", goals=["Fix login"])
         assert "clarification.md" in prompt
         # REQ-1: should NOT instruct to read design.md
@@ -212,7 +212,7 @@ class TestProductRoleCli:
             test_command="pytest tests/ -v",
             run_examples=["my-cli --help", "my-cli init /tmp/test"],
         )
-        role = ProductRole(verification=verification)
+        role = ProductRole(verification=verification, knowledge_dir=Path("/tmp/pk"))
         prompt = role.build_prompt("explore", round_num=1, round_dir="/r/001", goals=["Add feature"])
 
         assert "my-cli --help" in prompt
@@ -229,7 +229,7 @@ class TestProductRoleCli:
             test_command="pytest tests/ -v",
             run_examples=["my-cli --help"],
         )
-        role = ProductRole(verification=verification)
+        role = ProductRole(verification=verification, knowledge_dir=Path("/tmp/pk"))
         prompt = role.build_prompt("acceptance", round_num=1, round_dir="/r/001", goals=["Add feature"])
 
         assert "pytest tests/ -v" in prompt
@@ -242,7 +242,7 @@ class TestProductRoleCli:
 
     def test_context_appended_to_prompt(self):
         verification = VerificationConfig(type="cli", test_command="pytest")
-        role = ProductRole(verification=verification)
+        role = ProductRole(verification=verification, knowledge_dir=Path("/tmp/pk"))
         prompt = role.build_prompt(
             "explore", round_num=1, round_dir="/r/001",
             goals=["Add feature"], context="## Extra context\nSome info",
@@ -258,7 +258,7 @@ class TestProductRoleWeb:
             type="web",
             base_url="http://localhost:3000",
         )
-        role = ProductRole(verification=verification)
+        role = ProductRole(verification=verification, knowledge_dir=Path("/tmp/pk"))
         prompt = role.build_prompt("explore", round_num=1, round_dir="/r/001", goals=["Fix login"])
 
         assert "http://localhost:3000" in prompt
@@ -273,7 +273,7 @@ class TestProductRoleWeb:
             type="web",
             base_url="http://localhost:3000",
         )
-        role = ProductRole(verification=verification)
+        role = ProductRole(verification=verification, knowledge_dir=Path("/tmp/pk"))
         prompt = role.build_prompt("acceptance", round_num=1, round_dir="/r/001", goals=["Fix login"])
 
         assert "http://localhost:3000" in prompt

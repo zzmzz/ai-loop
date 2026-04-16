@@ -1,0 +1,19 @@
+---
+description: 提交代码时自动更新相关文档
+globs:
+alwaysApply: true
+---
+
+# 提交代码时更新文档
+
+当用户要求提交代码（commit、提交、ship 等）时，**在创建 commit 之前**，先使用 doc-updater subagent 更新本次改动涉及的文档：
+
+```
+Task(subagent_type="doc-updater", prompt="根据本次代码改动更新相关文档")
+```
+
+流程：
+1. 先完成代码改动
+2. 调用 doc-updater 检查并更新 docs/ 目录下受影响的文档（如 README、architecture、index 等）
+3. 将文档更新一并纳入本次 commit
+4. 执行 git commit

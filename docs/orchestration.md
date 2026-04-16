@@ -16,7 +16,9 @@ Orchestrator(ai_loop_dir: Path, verbose: bool = False,
 2. 加载 `state.json` → `LoopState`
 3. 创建 `MemoryManager`、`ContextCollector`
 4. 创建 `EventLogger`（`ai_loop_dir / "logs"`，文件名随当前轮次 `round-NNN.jsonl`），用于记录本轮编排事件
-5. 确保 4 个工作空间目录存在（orchestrator/product/developer/reviewer），从 templates/ 复制初始 CLAUDE.md
+5. 确保 4 个工作空间目录存在（orchestrator/product/developer/reviewer），从 `templates/` 复制或刷新各角色 `CLAUDE.md`；确保 `.ai-loop/product-knowledge/` 存在
+   - 若 `state.json` 中的 `ai_loop_version` 与当前安装的 `ai_loop.__version__` 不一致，则用包内模板替换 `## 累积记忆` **之前** 的正文，**不覆盖**累积记忆段落；随后把新版本写回 `state.json`
+   - `ai-loop init` 写入的初始状态会带上当前包版本，便于首轮即记录基线
 6. 按配置决定是否创建 `DevServer`（web 项目需要，cli/library 不需要）
 7. 创建 `Brain`（使用 orchestrator 工作空间）
 8. 创建三角色实例和对应的 `RoleRunner`（工具权限各不同）
@@ -25,7 +27,7 @@ Orchestrator(ai_loop_dir: Path, verbose: bool = False,
 
 | 角色 | 允许的工具 |
 |------|-----------|
-| product | Read, Glob, Grep, Bash |
+| product | Read, Glob, Grep, Bash, Write |
 | developer | Read, Glob, Grep, Edit, Write, Bash, Skill, Agent |
 | reviewer | Read, Glob, Grep, Bash |
 | brain | （无工具，纯推理） |
@@ -45,7 +47,7 @@ _ask_brain("post_requirement", ...)      ← Brain 判断需求是否清晰
 _server_stop()
 ```
 
-Product 探索时会自动注入 `code-digest.md`（如存在），避免每轮重复读取全量代码。
+Product 探索时会自动注入 `product-knowledge/index.md`（如存在）与 `code-digest.md`（如存在），减少重复读代码、便于按业务域恢复产品认知。
 
 ### 阶段 2：技术设计
 
@@ -158,9 +160,12 @@ def _call_role(self, role_phase, rnd, round_dir, goals):
     # 1. 收集前序产物作为上下文
     context = self._context_collector.collect(role_phase, round_dir)
 
-    # 2. Product 探索时额外注入 code-digest.md
-    if role_phase == "product:explore" and digest exists:
-        context += code_digest_content
+    # 2. Product 探索时额外注入 product-knowledge/index.md、code-digest.md（若存在）
+    if role_phase == "product:explore":
+        if knowledge_index.exists():
+            context += index_content
+        if digest_path.exists():
+            context += code_digest_content
 
     # 3. 角色对象构建 prompt
     prompt = role.build_prompt(phase, rnd, round_dir, goals, context=context)

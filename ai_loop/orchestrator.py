@@ -3,11 +3,12 @@ from importlib import resources
 from pathlib import Path
 import subprocess
 from typing import Callable, Optional
+from ai_loop import __version__
 from ai_loop.config import AiLoopConfig, load_config
 from ai_loop.state import LoopState, load_state, save_state
 from ai_loop.server import DevServer
 from ai_loop.brain import Brain, BrainDecision
-from ai_loop.memory import MemoryManager
+from ai_loop.memory import MemoryManager, MEMORY_SECTION_HEADER
 from ai_loop.logger import EventLogger
 from ai_loop.roles.base import RoleRunner
 from ai_loop.roles.product import ProductRole
@@ -85,18 +86,27 @@ class Orchestrator:
             orchestrator_cwd=str(ai_loop_dir / "workspaces" / "orchestrator")
         )
 
-        self._product = ProductRole(verification=self._config.verification)
+        self._product = ProductRole(
+            verification=self._config.verification,
+            knowledge_dir=ai_loop_dir / "product-knowledge",
+        )
         self._developer = DeveloperRole()
         self._reviewer = ReviewerRole()
 
         self._runners = {
-            "product": RoleRunner("product", ["Read", "Glob", "Grep", "Bash"]),
+            "product": RoleRunner("product", ["Read", "Glob", "Grep", "Bash", "Write"]),
             "developer": RoleRunner("developer", ["Read", "Glob", "Grep", "Edit", "Write", "Bash", "Skill", "Agent"]),
             "reviewer": RoleRunner("reviewer", ["Read", "Glob", "Grep", "Bash"]),
         }
 
     def _ensure_workspaces(self) -> None:
-        """Ensure all workspace directories and template files exist."""
+        """Ensure all workspace directories and template files exist.
+
+        When the ai-loop package version has changed since the last run,
+        refresh the template portion of each role's CLAUDE.md while
+        preserving accumulated memories below the ``## 累积记忆`` marker.
+        """
+        version_changed = self._state.ai_loop_version != __version__
         workspaces = self._dir / "workspaces"
         for role_name, template_name in _ROLE_TEMPLATE_MAP.items():
             ws = workspaces / role_name
@@ -107,10 +117,22 @@ class Orchestrator:
                     ref = resources.files(ai_loop.templates).joinpath(template_name)
                     claude_md.write_text(ref.read_text(encoding="utf-8"))
                 except (FileNotFoundError, TypeError):
-                    claude_md.write_text(f"# Role: {role_name}\n\n## 累积记忆\n")
+                    claude_md.write_text(f"# Role: {role_name}\n\n{MEMORY_SECTION_HEADER}\n")
+            elif version_changed:
+                try:
+                    ref = resources.files(ai_loop.templates).joinpath(template_name)
+                    new_template = ref.read_text(encoding="utf-8")
+                    MemoryManager.refresh_template(claude_md, new_template)
+                except (FileNotFoundError, TypeError):
+                    pass
             if role_name != "orchestrator":
                 (ws / "notes").mkdir(exist_ok=True)
         (self._dir / "rounds").mkdir(exist_ok=True)
+        (self._dir / "product-knowledge").mkdir(exist_ok=True)
+
+        if version_changed:
+            self._state.ai_loop_version = __version__
+            save_state(self._state, self._dir / "state.json")
 
     @property
     def current_round(self) -> int:
@@ -231,6 +253,10 @@ class Orchestrator:
             if digest_path.exists():
                 digest = digest_path.read_text()
                 context += f"\n\n## code-digest.md\n\n{digest}"
+        knowledge_index = self._dir / "product-knowledge" / "index.md"
+        if knowledge_index.exists():
+            index_content = knowledge_index.read_text()
+            context += f"\n\n## product-knowledge/index.md\n\n{index_content}"
         prompt = role.build_prompt(phase, rnd, str(round_dir), goals, context=context)
 
         if self._config.human_decision == "high":

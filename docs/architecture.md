@@ -44,13 +44,13 @@
 | **Orchestrator** | `orchestrator.py` | 驱动流程、管理 Server、调度角色和 Brain | [编排引擎](orchestration.md) |
 | **Brain** | `brain.py` | 6 个决策点的独立裁判，代码摘要生成，记忆压缩 | [决策系统](brain.md) |
 | **RoleRunner** | `roles/base.py` | Claude Code CLI 流式 JSON 双向通信封装 | [角色系统](roles.md) |
-| **ProductRole** | `roles/product.py` | 需求探索、澄清、验收（区分 web/cli 验收策略） | [角色系统](roles.md) |
+| **ProductRole** | `roles/product.py` | 需求探索、澄清、验收（区分 web/cli）；维护 `.ai-loop/product-knowledge/` 认知库 | [角色系统](roles.md) |
 | **DeveloperRole** | `roles/developer.py` | 技术设计、TDD 实现、审查修复 | [角色系统](roles.md) |
 | **ReviewerRole** | `roles/reviewer.py` | 5 维代码审查 | [角色系统](roles.md) |
-| **MemoryManager** | `memory.py` | 累积记忆追加、滑动窗口压缩 | [记忆与上下文](memory-context.md) |
+| **MemoryManager** | `memory.py` | 累积记忆追加、滑动窗口压缩；包版本变化时刷新 CLAUDE.md 模板段（保留 `## 累积记忆` 之后） | [记忆与上下文](memory-context.md) |
 | **ContextCollector** | `context.py` | 阶段间产物自动注入 | [记忆与上下文](memory-context.md) |
 | **AiLoopConfig** | `config.py` | 配置加载校验，支持 web/cli/library | [配置参考](config-reference.md) |
-| **LoopState** | `state.py` | 轮次/阶段/重试状态持久化 | — |
+| **LoopState** | `state.py` | 轮次/阶段/重试状态持久化；`ai_loop_version` 记录上次成功对齐模板时所用的包版本 | — |
 | **DevServer** | `server.py` | Dev Server 启动/健康检查/停止 | — |
 | **EventLogger** | `logger.py` | 每轮 JSONL 结构化事件（阶段、AI 调用/结果、Brain、用户交互、错误） | [编排引擎](orchestration.md) |
 | **detect** | `detect.py` | 通过 Claude Code 自动检测项目配置 | — |
@@ -115,9 +115,10 @@ Round N 开始
 ```
 .ai-loop/
 ├── config.yaml                 # 项目配置
-├── state.json                  # 迭代状态（当前轮次、重试计数、历史）
+├── state.json                  # 迭代状态（当前轮次、重试计数、历史、ai_loop_version）
 ├── server.log                  # Dev Server 日志
 ├── code-digest.md              # 代码结构摘要（Brain 生成，每轮更新）
+├── product-knowledge/          # Product 维护的产品认知（index.md + 业务域子文档）
 ├── logs/                       # 结构化事件日志（每轮 round-NNN.jsonl）
 ├── rounds/
 │   ├── 001/
@@ -159,6 +160,6 @@ proc = subprocess.Popen(cmd, stdin=PIPE, stdout=PIPE, cwd=workspace)
 ```
 
 **隔离机制**：
-- **工具隔离** — Product 只能 Read+Bash（浏览器），Developer 能 Edit+Write+Bash，Reviewer 只读
+- **工具隔离** — Product：`Read`/`Glob`/`Grep`/`Bash`/`Write`（`Write` 仅用于写入 `product-knowledge/`）；Developer 能 `Edit`+`Write`+`Bash` 等；Reviewer 只读
 - **上下文隔离** — 每个角色有独立的 CLAUDE.md 工作空间
 - **双向通信** — 通过 stream-json 格式实现 prompt → result → follow-up 的多轮对话

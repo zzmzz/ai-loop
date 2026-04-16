@@ -4,6 +4,20 @@
 
 所有配置存储在 `.ai-loop/config.yaml`，由 `ai-loop init` 生成，运行时由 `load_config()` 加载校验。
 
+## 运行时状态（state.json）
+
+与 `config.yaml` 并列，由 `ai_loop.state` 读写，**不由用户手工编辑**（调试时可查看）：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `current_round` | int | 当前轮次编号 |
+| `phase` | str | 当前阶段标识（如 `idle`） |
+| `retry_counts` | object | 审查/验收等重试计数 |
+| `history` | array | 已完成轮次的摘要历史 |
+| `ai_loop_version` | str | 上次与工作区模板对齐时所记录的 `ai_loop` 包版本；与当前安装版本不一致时，下一轮 `Orchestrator` 初始化会刷新各角色 `CLAUDE.md` 的模板段并更新此字段 |
+
+`ai-loop init` 创建的初始 `state.json` 会将 `ai_loop_version` 设为当前包版本。
+
 ## 完整字段说明
 
 ```yaml

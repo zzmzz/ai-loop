@@ -42,6 +42,12 @@ AI Loop 通过两套机制解决跨轮次连续性问题：**累积记忆**（Me
 
 统计 CLAUDE.md 中 `### Round \d{3}` 的数量。
 
+#### refresh_template(claude_md, new_template) → bool
+
+静态方法。用 `new_template` 替换当前 `CLAUDE.md` 中 **`## 累积记忆` 之前** 的整段模板正文，**保留**从 `## 累积记忆` 起的累积记忆与后续内容不变。若新正文与旧模板段相同则跳过写入并返回 `False`，否则写回文件并返回 `True`。当模板正文里误含 `## 累积记忆` 时，会先截断到该标记之前再拼接，避免重复章节。
+
+Orchestrator 在检测到已安装包版本与 `state.json` 中的 `ai_loop_version` 不一致时，对每个已存在的角色 `CLAUDE.md` 调用此方法，以便升级 ai-loop 后自动同步内置模板，同时不丢失用户积累的记忆。
+
 #### compact_memories(claude_md, window, summarizer)
 
 当轮次数超过 `window`（默认 5）时执行压缩：
@@ -110,9 +116,9 @@ developer:fix_review → review.md
 
 文件不存在时跳过（如 clarification.md 只在 CLARIFY 流程时产生）。
 
-### 额外注入：code-digest.md
+### 额外注入：product-knowledge/index.md 与 code-digest.md
 
-`product:explore` 阶段有一个特殊处理：Orchestrator 会额外检查 `code-digest.md` 是否存在，如果存在则追加到上下文中。这使得 Product 不需要每轮重新读取全量代码，只需关注增量变更。
+`product:explore` 阶段：Orchestrator 若发现 `.ai-loop/product-knowledge/index.md`，将其全文追加到上下文；若存在 `code-digest.md`，再追加代码摘要。这样 Product 可先恢复按业务域整理的产品认知，再结合摘要关注增量变更。
 
 ## 代码摘要（code-digest.md）
 
@@ -136,7 +142,7 @@ Round N-1 结束
 Round N 开始
   └→ Product 探索
       ├─ 读取 CLAUDE.md（含累积记忆）  ← Claude Code 自动读取
-      └─ 注入 code-digest.md            ← ContextCollector + Orchestrator
+      └─ 注入 product-knowledge/index.md、code-digest.md（如存在）← Orchestrator
   └→ Developer 设计
       ├─ 读取 CLAUDE.md
       └─ 注入 requirement.md            ← ContextCollector

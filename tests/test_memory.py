@@ -1,6 +1,6 @@
 from pathlib import Path
 import pytest
-from ai_loop.memory import MemoryManager
+from ai_loop.memory import MemoryManager, MEMORY_SECTION_HEADER
 
 
 class TestMemoryManager:
@@ -189,3 +189,67 @@ class TestMemoryManager:
         text = md.read_text()
         assert "### 历史摘要" in text
         assert "historical summary" in text
+
+
+class TestRefreshTemplate:
+    def test_replaces_template_preserves_memory(self, tmp_path: Path):
+        md = tmp_path / "CLAUDE.md"
+        md.write_text(
+            "# Role: Old\n\nOld instructions.\n\n"
+            "## 累积记忆\n\n### Round 001\n- important note\n"
+        )
+        new_template = "# Role: New\n\nNew instructions.\n\n## 累积记忆\n"
+
+        result = MemoryManager.refresh_template(md, new_template)
+
+        assert result is True
+        text = md.read_text()
+        assert "# Role: New" in text
+        assert "New instructions." in text
+        assert "Old instructions." not in text
+        assert "### Round 001" in text
+        assert "important note" in text
+
+    def test_no_change_returns_false(self, tmp_path: Path):
+        md = tmp_path / "CLAUDE.md"
+        md.write_text(
+            "# Role: Same\n\nSame instructions.\n\n"
+            "## 累积记忆\n\n### Round 001\n- note\n"
+        )
+        new_template = "# Role: Same\n\nSame instructions.\n\n## 累积记忆\n"
+
+        result = MemoryManager.refresh_template(md, new_template)
+
+        assert result is False
+
+    def test_file_without_memory_header(self, tmp_path: Path):
+        md = tmp_path / "CLAUDE.md"
+        md.write_text("# Role: Legacy\n\nOld content only.\n")
+        new_template = "# Role: Updated\n\nNew content.\n\n## 累积记忆\n"
+
+        result = MemoryManager.refresh_template(md, new_template)
+
+        assert result is True
+        text = md.read_text()
+        assert "# Role: Updated" in text
+        assert MEMORY_SECTION_HEADER in text
+        assert "Old content only." not in text
+
+    def test_preserves_compacted_history(self, tmp_path: Path):
+        md = tmp_path / "CLAUDE.md"
+        md.write_text(
+            "# Role: Dev\n\n## 累积记忆\n\n"
+            "### 历史摘要\ncompressed info\n\n"
+            "### Round 005\n- recent note\n"
+        )
+        new_template = "# Role: Dev v2\n\nUpdated instructions.\n\n## 累积记忆\n"
+
+        result = MemoryManager.refresh_template(md, new_template)
+
+        assert result is True
+        text = md.read_text()
+        assert "# Role: Dev v2" in text
+        assert "### 历史摘要" in text
+        assert "compressed info" in text
+        assert "### Round 005" in text
+        assert "recent note" in text

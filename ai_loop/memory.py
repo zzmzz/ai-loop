@@ -77,6 +77,34 @@ class MemoryManager:
 
         claude_md.write_text(before_mem + new_mem)
 
+    @staticmethod
+    def refresh_template(claude_md: Path, new_template: str) -> bool:
+        """Replace the template portion of CLAUDE.md (before ## 累积记忆) while preserving memories.
+
+        Returns True if the file was updated, False if no change was needed.
+        """
+        text = claude_md.read_text()
+
+        if MEMORY_SECTION_HEADER in text:
+            idx = text.index(MEMORY_SECTION_HEADER)
+            old_template = text[:idx]
+            memory_part = text[idx:]
+        else:
+            old_template = text
+            memory_part = f"\n{MEMORY_SECTION_HEADER}\n"
+
+        # Ensure new_template ends cleanly before memory section
+        new_template_trimmed = new_template.rstrip()
+        if MEMORY_SECTION_HEADER in new_template_trimmed:
+            new_template_trimmed = new_template_trimmed[:new_template_trimmed.index(MEMORY_SECTION_HEADER)]
+        new_template_trimmed = new_template_trimmed.rstrip() + "\n\n"
+
+        if old_template == new_template_trimmed:
+            return False
+
+        claude_md.write_text(new_template_trimmed + memory_part)
+        return True
+
     def update_context(self, claude_md: Path, project_path: str, description: str, goals: list[str]) -> None:
         text = claude_md.read_text()
         goals_text = "\n".join(f"- {g}" for g in goals)

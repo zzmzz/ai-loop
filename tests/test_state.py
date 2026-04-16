@@ -50,3 +50,25 @@ class TestLoopState:
         state = load_state(state_file)
         assert state.current_round == 1
         assert state.phase == "idle"
+
+    def test_ai_loop_version_round_trip(self, tmp_path: Path):
+        state_file = tmp_path / "state.json"
+        state = LoopState(ai_loop_version="1.2.3")
+        save_state(state, state_file)
+
+        reloaded = load_state(state_file)
+        assert reloaded.ai_loop_version == "1.2.3"
+
+    def test_ai_loop_version_missing_defaults_empty(self, tmp_path: Path):
+        """Old state files without ai_loop_version should load with empty string."""
+        state_file = tmp_path / "state.json"
+        state_file.write_text(json.dumps({
+            "current_round": 3,
+            "phase": "idle",
+            "retry_counts": {"review": 0, "acceptance": 0},
+            "history": [],
+        }))
+
+        state = load_state(state_file)
+        assert state.ai_loop_version == ""
+        assert state.current_round == 3

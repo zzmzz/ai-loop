@@ -6,6 +6,7 @@ import shutil
 import click
 import yaml
 
+from ai_loop import __version__
 from ai_loop.config import HUMAN_DECISION_LEVELS
 from ai_loop.detect import detect_project_config
 from ai_loop.logger import EventLogger
@@ -190,7 +191,7 @@ def init(project_path, name, project_type, start_command, health_url, base_url, 
     )
 
     # Write initial state
-    save_state(LoopState(), ai_dir / "state.json")
+    save_state(LoopState(ai_loop_version=__version__), ai_dir / "state.json")
 
     click.echo(f"AI Loop 初始化完成: {ai_dir}")
 

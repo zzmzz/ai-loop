@@ -52,9 +52,10 @@ ai_loop/
 ```
 .ai-loop/
 ├── config.yaml                  # 🔧 项目配置（load_config 的输入，改配置逻辑时可参考）
-├── state.json                   # 📊 迭代状态（当前轮次、重试计数、历史摘要）
+├── state.json                   # 📊 迭代状态（当前轮次、重试计数、历史摘要、上次运行的 ai-loop 包版本）
 ├── server.log                   # 🗑️ Dev Server 日志（调试 server.py 时才需要看）
 ├── code-digest.md               # 🗑️ 代码摘要缓存（Brain 每轮自动生成，不需要手动读）
+├── product-knowledge/           # 📁 产品认知文档（Product 写入；`index.md` 会在探索阶段注入 prompt）
 ├── logs/                        # 📁 结构化事件日志（每轮一个 round-NNN.jsonl）
 │
 ├── rounds/                      # 📁 每轮的角色产出物
@@ -91,6 +92,7 @@ ai_loop/
 | 改记忆管理 (`memory.py`) | `workspaces/*/CLAUDE.md` — 了解记忆追加/压缩后的实际效果 |
 | 改上下文注入 (`context.py`) | `rounds/NNN/*.md` — 了解各阶段产出物的真实格式 |
 | 改角色 prompt (`roles/*.py`) | `rounds/NNN/*.md` — 了解角色实际输出是否符合 prompt 要求 |
+| 改产品认知 / Product 上下文 | `product-knowledge/*.md` — 索引与子文档格式见 [角色系统](roles.md) |
 | 调试 Server (`server.py`) | `server.log` |
 | 改事件日志 (`logger.py`) 或排查编排轨迹 | `logs/round-*.jsonl` |
 | **其他情况** | **不需要读 .ai-loop/ 下的任何文件** |

@@ -83,6 +83,8 @@ addopts = "--cov=ai_loop --cov-report=term-missing --cov-fail-under=80"
 注意点：
 - `run_single_round()` 的阶段顺序和 Brain 决策分支必须与设计文档一致
 - Server 启停有严格的时机要求（Product 探索/验收前启动，不需要时停止）
+- `_ensure_workspaces()` 负责工作区、`product-knowledge/` 目录、按包版本刷新 `CLAUDE.md` 模板（见 `MemoryManager.refresh_template`）并回写 `LoopState.ai_loop_version`
+- Product 探索上下文注入（`index.md`、`code-digest.md`）与 `ProductRole` 的 `knowledge_dir` 需保持一致
 - 修改流程后同步更新 `test_orchestrator.py` 和 `test_integration.py`
 
 ### brain.py
@@ -110,7 +112,7 @@ RoleRunner 是所有角色调用的底层，改动影响面最大。
 
 注意点：
 - Prompt 修改应同步更新对应的测试
-- Product 的 web/cli 分支逻辑需要同时维护
+- Product 的 web/cli 分支逻辑需要同时维护；`ProductRole` 构造需传入 `knowledge_dir`，prompt 中的产品认知维护说明与 Orchestrator 注入路径一致
 - YAML frontmatter 格式（round, role, phase, result, timestamp）是 Brain 和 ContextCollector 的隐式契约
 
 ### memory.py
@@ -119,6 +121,7 @@ RoleRunner 是所有角色调用的底层，改动影响面最大。
 
 注意点：
 - `MEMORY_SECTION_HEADER = "## 累积记忆"` 是与 CLAUDE.md 模板的隐式契约
+- `refresh_template` 与 Orchestrator 版本对齐逻辑共用该标记；改动标记或模板边界行为时需同步测 `test_memory.py` / `test_orchestrator.py`
 - `compact_memories` 的压缩逻辑依赖正则匹配 `### Round \d{3}`，不要改动轮次命名格式
 - 压缩后的 `### 历史摘要` 段落会在下次压缩时被再次输入给 summarizer
 

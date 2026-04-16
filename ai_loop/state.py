@@ -10,6 +10,7 @@ class LoopState:
     phase: str = "idle"
     retry_counts: dict = field(default_factory=lambda: {"review": 0, "acceptance": 0})
     history: list[dict] = field(default_factory=list)
+    ai_loop_version: str = ""
 
     def complete_round(self, summary: str) -> None:
         self.history.append({
@@ -35,6 +36,7 @@ class LoopState:
             "phase": self.phase,
             "retry_counts": self.retry_counts,
             "history": self.history,
+            "ai_loop_version": self.ai_loop_version,
         }
 
 
@@ -48,6 +50,7 @@ def load_state(path: Path) -> LoopState:
         phase=data.get("phase", "idle"),
         retry_counts=data.get("retry_counts", {"review": 0, "acceptance": 0}),
         history=data.get("history", []),
+        ai_loop_version=data.get("ai_loop_version", ""),
     )
 
 

@@ -1,9 +1,12 @@
+from pathlib import Path
+
 from ai_loop.config import VerificationConfig
 
 
 class ProductRole:
-    def __init__(self, verification: VerificationConfig):
+    def __init__(self, verification: VerificationConfig, knowledge_dir: Path):
         self.verification = verification
+        self._knowledge_dir = knowledge_dir
 
     def build_prompt(self, phase: str, round_num: int, round_dir: str,
                      goals: list[str], context: str = "") -> str:
@@ -27,19 +30,24 @@ class ProductRole:
         return self._explore_prompt_cli(round_num, round_dir, goals_text)
 
     def _explore_prompt_web(self, round_num, round_dir, goals_text):
+        kd = self._knowledge_dir
         return f"""你是产品经理。你的任务是体验当前产品并提出改进需求。
 
 当前目标：
 {goals_text}
 
 工作步骤：
-1. 阅读项目代码摘要（code-digest.md 已附在下方，如有），了解已知项目状态
-2. 通过 git diff 查看自上轮以来的代码变更
-3. 只针对变更部分深入阅读
-4. 编写 Playwright Python 脚本访问 {self.verification.base_url}，像真实用户一样走完主要流程
-5. 截图保存到当前工作区的 notes/ 目录
-6. 回答下方"强制问题"，理清需求本质
-7. 按模板输出需求文档
+1. 阅读 product-knowledge/index.md（已附在下方，如有），根据本轮目标 Read 相关子文档，快速恢复产品认知
+2. 阅读项目代码摘要（code-digest.md 已附在下方，如有），了解已知项目状态
+3. 通过 git diff 查看自上轮以来的代码变更
+4. 只针对变更部分深入阅读
+5. 编写 Playwright Python 脚本访问 {self.verification.base_url}，像真实用户一样走完主要流程
+6. 截图保存到当前工作区的 notes/ 目录
+7. 回答下方"强制问题"，理清需求本质
+8. 按模板输出需求文档
+9. 更新产品认知文档：将本次探索的新发现写入 `{kd}/` 目录
+
+{self._knowledge_maintenance_instruction()}
 
 ## 强制问题（先回答再写需求）
 
@@ -82,20 +90,25 @@ timestamp: （当前时间 ISO 格式）
 
     def _explore_prompt_cli(self, round_num, round_dir, goals_text):
         examples = "\n".join(f"  - `{e}`" for e in self.verification.run_examples)
+        kd = self._knowledge_dir
         return f"""你是产品经理。你的任务是体验当前 CLI 工具并提出改进需求。
 
 当前目标：
 {goals_text}
 
 工作步骤：
-1. 阅读项目代码摘要（code-digest.md 已附在下方，如有），了解已知项目状态
-2. 通过 git diff 查看自上轮以来的代码变更
-3. 只针对变更部分深入阅读
-4. 运行以下示例命令，像真实用户一样体验 CLI 行为：
+1. 阅读 product-knowledge/index.md（已附在下方，如有），根据本轮目标 Read 相关子文档，快速恢复产品认知
+2. 阅读项目代码摘要（code-digest.md 已附在下方，如有），了解已知项目状态
+3. 通过 git diff 查看自上轮以来的代码变更
+4. 只针对变更部分深入阅读
+5. 运行以下示例命令，像真实用户一样体验 CLI 行为：
 {examples}
-5. 运行测试命令了解现有测试覆盖：`{self.verification.test_command}`
-6. 回答下方"强制问题"，理清需求本质
-7. 按模板输出需求文档
+6. 运行测试命令了解现有测试覆盖：`{self.verification.test_command}`
+7. 回答下方"强制问题"，理清需求本质
+8. 按模板输出需求文档
+9. 更新产品认知文档：将本次探索的新发现写入 `{kd}/` 目录
+
+{self._knowledge_maintenance_instruction()}
 
 ## 强制问题（先回答再写需求）
 
@@ -136,6 +149,48 @@ timestamp: （当前时间 ISO 格式）
 ### 验收标准
 （逐条可验证的条件，与具体需求一一对应）"""
 
+    def _knowledge_maintenance_instruction(self):
+        kd = self._knowledge_dir
+        return f"""## 产品认知文档维护
+
+目录：`{kd}/`
+
+维护规则：
+- 使用 Write 工具写入文件，仅限 `{kd}/` 目录
+- 按业务域拆分子文档（如 auth.md、export.md），每个域一个文件
+- 同步维护 `{kd}/index.md` 索引
+
+index.md 格式：
+```
+# 产品认知索引
+
+| 业务域 | 文件 | 概述 | 最后更新 |
+|--------|------|------|----------|
+| 用户认证 | auth.md | 登录/注册/权限体系 | Round 3 |
+```
+
+子文档格式：
+```
+# {{业务域名称}}
+
+## 功能概述
+（这个域包含哪些功能，面向谁）
+
+## 体验现状
+（当前的交互流程和体验质量）
+
+## 已知问题
+（发现但未解决的问题，按优先级排列）
+
+## 改进历史
+- Round N: 改了什么 → 效果如何
+```
+
+要求：
+- 已有子文档做增量更新，不要全量重写
+- 已解决的问题从"已知问题"移到"改进历史"
+- 新发现的业务域创建新文件并更新 index"""
+
     def _clarify_prompt(self, round_num, round_dir, goals_text):
         return f"""你是产品经理。开发者在设计文档中提出了待确认问题，请你回答。
 
@@ -161,6 +216,7 @@ timestamp: （当前时间 ISO 格式）
         return self._acceptance_prompt_cli(round_num, round_dir, goals_text)
 
     def _acceptance_prompt_web(self, round_num, round_dir, goals_text):
+        kd = self._knowledge_dir
         return f"""你是产品经理。你的任务是验收本轮开发成果。
 
 1. 参考下方附带的需求文档（注意每条需求的优先级 P0/P1/P2）
@@ -169,6 +225,7 @@ timestamp: （当前时间 ISO 格式）
    - `notes/accept-{{需求编号}}-before.png`（操作前状态）
    - `notes/accept-{{需求编号}}-after.png`（操作后状态）
 4. 输出验收结果
+5. 根据验收结果更新 `{kd}/` 下的相关产品认知子文档，记录本轮改进效果
 
 输出文件：{round_dir}/acceptance.md
 
@@ -198,6 +255,7 @@ timestamp: （当前时间 ISO 格式）
 
     def _acceptance_prompt_cli(self, round_num, round_dir, goals_text):
         examples = "\n".join(f"  - `{e}`" for e in self.verification.run_examples)
+        kd = self._knowledge_dir
         return f"""你是产品经理。你的任务是验收本轮开发成果。
 
 1. 参考下方附带的需求文档（注意每条需求的优先级 P0/P1/P2）
@@ -206,6 +264,7 @@ timestamp: （当前时间 ISO 格式）
 {examples}
 4. 将关键命令输出保存为证据：`notes/accept-{{需求编号}}-output.txt`
 5. 逐条对照需求，判定是否满足
+6. 根据验收结果更新 `{kd}/` 下的相关产品认知子文档，记录本轮改进效果
 
 输出文件：{round_dir}/acceptance.md
 

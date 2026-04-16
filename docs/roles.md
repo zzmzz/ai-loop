@@ -64,10 +64,14 @@ RoleRunner(role_name: str, allowed_tools: list[str])
 ### ProductRole（产品经理）
 
 ```python
-ProductRole(verification: VerificationConfig)
+ProductRole(verification: VerificationConfig, knowledge_dir: Path)
 ```
 
+`knowledge_dir` 通常为 `.ai-loop/product-knowledge`。Orchestrator 在 `product:explore` 时若存在 `knowledge_dir/index.md`，会将其内容附加到角色上下文（与 `code-digest.md` 类似）。
+
 根据 `verification.type` 区分 web 和 cli/library 的行为差异。
+
+**产品认知库（`product-knowledge/`）**：探索阶段 prompt 要求 Product 先读索引并按目标阅读子文档；探索结束后用 `Write` 将新发现写入该目录（仅限此目录），按业务域拆分文件并维护 `index.md`（表格列：业务域、文件、概述、最后更新）。验收阶段 prompt 要求根据验收结果更新相关子文档、记录改进效果。具体段落由 `ProductRole._knowledge_maintenance_instruction()` 生成。
 
 **阶段与输出**：
 
