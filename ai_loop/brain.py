@@ -6,11 +6,11 @@ from ai_loop.roles.base import RoleRunner
 
 DECISION_POINT_FILES = {
     "post_requirement": ["requirement.md"],
+    "post_development": ["requirement.md", "design.md", "dev-log.md"],
     "post_design": ["requirement.md", "design.md"],
     "post_implementation": ["requirement.md", "design.md", "dev-log.md"],
-    "post_review": ["requirement.md", "review.md"],
     "post_acceptance": ["requirement.md", "acceptance.md"],
-    "round_summary": ["requirement.md", "design.md", "dev-log.md", "review.md", "acceptance.md"],
+    "round_summary": ["requirement.md", "design.md", "dev-log.md", "acceptance.md"],
 }
 
 DECISION_POINT_INSTRUCTIONS = {
@@ -18,35 +18,45 @@ DECISION_POINT_INSTRUCTIONS = {
         "判断这份需求文档是否足够清晰、具体、可执行。"
         "可选决策：PROCEED（清晰可执行）/ REFINE（需要产品重新细化）"
     ),
+    "post_development": (
+        "逐项对照需求文档的验收标准与 dev-log.md 中的实现证据：\n"
+        "1. **验收标准逐项核实**：需求中每条验收标准，在 dev-log 中是否有明确的通过证据（测试结果、代码位置、截图等）？列出无证据项。\n"
+        "2. **测试覆盖**：dev-log 声称的测试是否覆盖了需求中的关键场景？是否有边界条件遗漏？\n"
+        "3. **设计一致性**：实现是否偏离了 design.md 的方案？如有偏离，是否合理？\n"
+        "4. **回归风险**：是否有测试失败未修复？是否引入了已知问题？\n\n"
+        "输出格式：先输出检查清单（每项标注 PASS/FAIL + 简要说明），再输出汇总决策。\n"
+        "可选决策：PROCEED（全部 PASS 或 FAIL 项不影响核心功能）/ RETRY（有关键 FAIL 项，需重做）"
+    ),
     "post_design": (
-        "判断这份设计是否合理、是否与需求匹配。"
-        "可选决策：PROCEED（合理）/ CLARIFY（有待确认问题需要产品回答）/ REDO（设计偏离需求，需重做）"
+        "逐项对照需求文档和设计文档，按以下检查清单评审：\n"
+        "1. **验收标准覆盖**：需求中的每条验收标准，设计中是否有对应的实现方案？列出未覆盖项。\n"
+        "2. **数值与范围一致性**：需求中提到的具体数值（区间、阈值、格式、枚举值），设计中是否完全一致？列出不一致项。\n"
+        "3. **兼容性**：改动是否考虑了已有数据、已有接口、已有存储的向后兼容？是否有数据迁移需要？\n"
+        "4. **遗漏检查**：需求明确说「要做」但设计中未提及的内容。\n"
+        "5. **不做的事情**：设计是否越界做了需求明确说「不做」的事？\n\n"
+        "输出格式：先输出检查清单（每项标注 PASS/FAIL + 简要说明），再输出汇总决策。\n"
+        "可选决策：PROCEED（全部 PASS）/ CLARIFY（有待确认问题需要产品回答）/ REDO（有 FAIL 项，设计需修正）"
     ),
     "post_implementation": (
         "判断实现是否完整，验证是否充分。"
         "可选决策：PROCEED（实现完整）/ RETRY（有遗漏或验证不充分）"
     ),
-    "post_review": (
-        "评估审查反馈的合理性和严重程度。"
-        "可选决策：APPROVE（无需修改或已批准）/ REWORK（有 Critical/Important 需修复）"
-        "/ SKIP_MINOR（只有 Minor 问题，可跳过）/ ESCALATE（需人类介入）"
-    ),
     "post_acceptance": (
-        "评估验收结果。注意 acceptance.md 中的 result 可能是 PASS / PARTIAL / FAIL。"
-        "可选决策：PASS（验收通过，包括 PARTIAL 且未通过项均为 P2）"
-        "/ PARTIAL_OK（P0 全过、仅 P1/P2 未通过，可接受，进入下一轮处理）"
-        "/ FAIL_IMPL（P0 未通过，属实现问题，需开发修复）"
+        "评估 QA 测试与验收结果。acceptance.md 包含需求验证、探索发现和健康评分。\n"
+        "重点关注：1) 需求验证是否全部通过 2) 探索发现中是否有 Critical/High 问题 3) 健康评分是否达标。\n"
+        "可选决策：PASS（验收通过，健康评分 ≥ 80，无 Critical/High）"
+        "/ PARTIAL_OK（P0 全过、无 Critical，有 High 但可接受，进入下一轮处理）"
+        "/ FAIL_IMPL（P0 未通过或有 Critical 探索发现，属实现问题，需开发修复）"
         "/ FAIL_REQ（需求不清导致，需产品重新定义）/ ESCALATE（需人类介入）"
     ),
     "round_summary": (
         "生成本轮总结。输出 JSON 格式：\n"
         '{"decision": "PASS", "reason": "一句话总结", '
         '"details": "完整轮次总结", '
-        '"memories": {"product": "...", "developer": "...", "reviewer": "..."}}\n'
+        '"memories": {"product": "...", "developer": "..."}}\n'
         "memories 中为各角色生成差异化的记忆内容：\n"
-        "- product：侧重需求变更、用户反馈、验收结果\n"
+        "- product：侧重需求变更、用户反馈、验收结果、QA 发现\n"
         "- developer：侧重技术决策、架构变更、代码模式\n"
-        "- reviewer：侧重审查发现的模式、反复出现的问题\n"
     ),
 }
 

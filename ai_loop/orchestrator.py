@@ -14,7 +14,6 @@ from ai_loop.logger import EventLogger
 from ai_loop.roles.base import RoleRunner
 from ai_loop.roles.product import ProductRole
 from ai_loop.roles.developer import DeveloperRole
-from ai_loop.roles.reviewer import ReviewerRole
 from ai_loop.context import ContextCollector
 import ai_loop.templates
 
@@ -44,7 +43,6 @@ _ROLE_TEMPLATE_MAP = {
     "orchestrator": "orchestrator_claude.md",
     "product": "product_claude.md",
     "developer": "developer_claude.md",
-    "reviewer": "reviewer_claude.md",
 }
 
 
@@ -92,12 +90,10 @@ class Orchestrator:
             knowledge_dir=ai_loop_dir / "product-knowledge",
         )
         self._developer = DeveloperRole()
-        self._reviewer = ReviewerRole()
 
         self._runners = {
             "product": RoleRunner("product", ["Read", "Glob", "Grep", "Bash", "Write"]),
             "developer": RoleRunner("developer", ["Read", "Glob", "Grep", "Edit", "Write", "Bash", "Skill", "Agent"]),
-            "reviewer": RoleRunner("reviewer", ["Read", "Glob", "Grep", "Bash"]),
         }
 
     def _ensure_workspaces(self) -> None:
@@ -142,6 +138,20 @@ class Orchestrator:
     def add_goal(self, goal: str) -> None:
         self._config.goals.append(goal)
 
+    # Ordered phases for resume logic.  The value is the stage label used
+    # to jump into the middle of ``run_single_round``.
+    _PHASES = [
+        "product_explore",
+        "developer_develop",
+        "qa_acceptance",
+        "round_summary",
+    ]
+
+    def _save_phase(self, phase: str) -> None:
+        """Persist the current phase so we can resume after a crash."""
+        self._state.phase = phase
+        save_state(self._state, self._state_file)
+
     def run_single_round(self) -> str:
         rnd = self._state.current_round
         self._logger.set_round(rnd)
@@ -150,79 +160,69 @@ class Orchestrator:
         round_dir.mkdir(parents=True, exist_ok=True)
         goals = self._config.goals
 
-        # 1. Product explore
-        self._server_start()
-        self._call_role("product:explore", rnd, round_dir, goals)
-        if self._config.human_decision != "low":
-            self._confirm_requirements(round_dir)
-        decision = self._ask_brain("post_requirement", round_dir=round_dir)
-        if decision.decision == "REFINE":
+        # Determine where to resume from
+        resume = self._state.phase
+        if resume == "idle" or resume not in self._PHASES:
+            resume = self._PHASES[0]  # start from beginning
+
+        resume_idx = self._PHASES.index(resume)
+
+        # ---------- 1. Product explore ----------
+        if resume_idx <= self._PHASES.index("product_explore"):
+            self._save_phase("product_explore")
+            self._server_start()
             self._call_role("product:explore", rnd, round_dir, goals)
             if self._config.human_decision != "low":
                 self._confirm_requirements(round_dir)
-        self._server_stop()
-
-        # 2. Developer design
-        self._call_role("developer:design", rnd, round_dir, goals)
-        decision = self._ask_brain("post_design", round_dir=round_dir)
-        if decision.decision == "CLARIFY":
-            self._call_role("product:clarify", rnd, round_dir, goals)
-            self._call_role("developer:design", rnd, round_dir, goals)
-        elif decision.decision == "REDO":
-            self._call_role("developer:design", rnd, round_dir, goals)
-
-        # 3. Developer implement + verify
-        self._call_role("developer:implement", rnd, round_dir, goals)
-        decision = self._ask_brain("post_implementation", round_dir=round_dir)
-        if decision.decision == "RETRY":
-            self._call_role("developer:implement", rnd, round_dir, goals)
-
-        # 4. Review loop
-        self._server_start()
-        max_review = self._config.limits.max_review_retries
-        for attempt in range(max_review + 1):
-            self._call_role("reviewer:review", rnd, round_dir, goals)
-            decision = self._ask_brain("post_review", round_dir=round_dir)
-            if decision.decision in ("APPROVE", "SKIP_MINOR"):
-                break
-            if decision.decision == "ESCALATE":
-                return self._escalate("review", decision.reason)
-            if attempt < max_review:
-                self._call_role("developer:fix_review", rnd, round_dir, goals)
-                self._call_role("developer:verify", rnd, round_dir, goals)
-        else:
-            return self._escalate("review", f"审查 {max_review} 次仍未通过")
-
-        # 5. Acceptance loop
-        max_accept = self._config.limits.max_acceptance_retries
-        for attempt in range(max_accept + 1):
-            self._call_role("product:acceptance", rnd, round_dir, goals)
-            decision = self._ask_brain("post_acceptance", round_dir=round_dir)
-            if decision.decision in ("PASS", "PARTIAL_OK"):
-                break
-            if decision.decision == "ESCALATE":
-                return self._escalate("acceptance", decision.reason)
-            if decision.decision == "FAIL_REQ":
-                self._server_stop()
+            decision = self._ask_brain("post_requirement", round_dir=round_dir)
+            if decision.decision == "REFINE":
                 self._call_role("product:explore", rnd, round_dir, goals)
-                self._call_role("developer:implement", rnd, round_dir, goals)
-                self._server_start()
-            elif decision.decision == "FAIL_IMPL":
-                self._server_stop()
-                self._call_role("developer:implement", rnd, round_dir, goals)
-                self._server_start()
-        else:
-            return self._escalate("acceptance", f"验收 {max_accept} 次仍未通过")
+                if self._config.human_decision != "low":
+                    self._confirm_requirements(round_dir)
+            self._server_stop()
 
-        self._server_stop()
+        # ---------- 2. Developer develop ----------
+        if resume_idx <= self._PHASES.index("developer_develop"):
+            self._save_phase("developer_develop")
+            self._call_role("developer:develop", rnd, round_dir, goals)
+            decision = self._ask_brain("post_development", round_dir=round_dir)
+            if decision.decision == "RETRY":
+                self._call_role("developer:develop", rnd, round_dir, goals)
 
-        # 6. Round summary + memory update
+        # ---------- 3. QA acceptance loop ----------
+        if resume_idx <= self._PHASES.index("qa_acceptance"):
+            self._save_phase("qa_acceptance")
+            self._server_start()
+            max_accept = self._config.limits.max_acceptance_retries
+            for attempt in range(max_accept + 1):
+                self._call_role("product:qa_acceptance", rnd, round_dir, goals)
+                decision = self._ask_brain("post_acceptance", round_dir=round_dir)
+                if decision.decision in ("PASS", "PARTIAL_OK"):
+                    break
+                if decision.decision == "ESCALATE":
+                    return self._escalate("acceptance", decision.reason)
+                if decision.decision == "FAIL_REQ":
+                    self._server_stop()
+                    self._call_role("product:explore", rnd, round_dir, goals)
+                    self._call_role("developer:implement", rnd, round_dir, goals)
+                    self._server_start()
+                elif decision.decision == "FAIL_IMPL":
+                    self._server_stop()
+                    self._call_role("developer:implement", rnd, round_dir, goals)
+                    self._server_start()
+            else:
+                return self._escalate("acceptance", f"验收 {max_accept} 次仍未通过")
+
+            self._server_stop()
+
+        # ---------- 4. Round summary + memory ----------
+        self._save_phase("round_summary")
         summary_decision = self._ask_brain("round_summary", round_dir=round_dir)
         summary = summary_decision.details or summary_decision.reason
         memories = summary_decision.memories
         self._update_all_memories(rnd, round_dir, summary, memories=memories)
 
-        # 7. Generate/update code digest
+        # 5. Generate/update code digest
         self._update_code_digest(round_dir)
 
         self._state.complete_round(summary)
@@ -242,7 +242,6 @@ class Orchestrator:
         role_map = {
             "product": self._product,
             "developer": self._developer,
-            "reviewer": self._reviewer,
         }
         role = role_map[role_name]
         self._log(f"\n\033[1m▶ [{role_name.upper()}] {phase}\033[0m")
@@ -328,7 +327,7 @@ class Orchestrator:
                 seen_titles.add(title)
                 reqs.append({"id": f"REQ-{m.group(1)}", "title": title,
                              "priority": "P1"})
-        for m in re.finditer(r'-\s*\*\*\[(P\d)\]\s*(.+?)\*\*', content):
+        for m in re.finditer(r'(?:^|\n)-?\s*\*\*\[(P\d)\]\s*(.+?)\*\*', content):
             title = m.group(2).strip()
             if title not in seen_titles:
                 seen_titles.add(title)
@@ -377,15 +376,16 @@ class Orchestrator:
         if not reqs:
             return
 
-        self._log("\n\033[1m📋 产品需求草案待确认：\033[0m")
-        for i, req in enumerate(reqs, 1):
-            self._log(f"  {i}. [{req['priority']}] {req['title']}")
-
         if not self._interaction_callback:
             return
 
+        req_list = "\n".join(
+            f"  {i}. [{req['priority']}] {req['title']}"
+            for i, req in enumerate(reqs, 1)
+        )
         response = self._interaction_callback(
-            f"产品角色提出了 {len(reqs)} 条需求（见上方列表）。\n"
+            f"📋 产品需求草案待确认（共 {len(reqs)} 条）：\n"
+            f"{req_list}\n\n"
             "请选择操作：\n"
             "  [a] 全部接受\n"
             "  [d] 输入要删除的编号（逗号分隔，如 d 2,3）\n"
@@ -448,7 +448,7 @@ class Orchestrator:
 
     def _update_all_memories(self, rnd: int, round_dir: Path, summary: str,
                              memories: dict = None) -> None:
-        for role_name in ("orchestrator", "product", "developer", "reviewer"):
+        for role_name in ("orchestrator", "product", "developer"):
             claude_md = self._dir / "workspaces" / role_name / "CLAUDE.md"
             if claude_md.exists():
                 if memories and role_name in memories:

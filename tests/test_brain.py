@@ -41,26 +41,11 @@ class TestBrain:
         assert "# Fix login" in prompt
 
     @patch("ai_loop.brain.RoleRunner.call")
-    def test_decide_post_review_approve(self, mock_call: MagicMock, ai_loop_dir: Path):
-        mock_call.return_value = '{"decision": "APPROVE", "reason": "All good"}'
-        brain = Brain(orchestrator_cwd=str(ai_loop_dir / "workspaces" / "orchestrator"))
-        round_dir = ai_loop_dir / "rounds" / "001"
-        (round_dir / "requirement.md").write_text("# req")
-        (round_dir / "review.md").write_text("---\nresult: APPROVE\n---\nLGTM")
-
-        result = brain.decide("post_review", round_dir=round_dir)
-
-        assert result.decision == "APPROVE"
-        prompt = mock_call.call_args[0][0]
-        # REQ-2: inline content
-        assert "LGTM" in prompt
-
-    @patch("ai_loop.brain.RoleRunner.call")
     def test_decide_round_summary(self, mock_call: MagicMock, ai_loop_dir: Path):
         mock_call.return_value = '{"decision": "PASS", "reason": "ok", "details": "summary text"}'
         brain = Brain(orchestrator_cwd=str(ai_loop_dir / "workspaces" / "orchestrator"))
         round_dir = ai_loop_dir / "rounds" / "001"
-        for f in ("requirement.md", "design.md", "dev-log.md", "review.md", "acceptance.md"):
+        for f in ("requirement.md", "design.md", "dev-log.md", "acceptance.md"):
             (round_dir / f).write_text(f"# {f}")
 
         result = brain.decide("round_summary", round_dir=round_dir)
@@ -108,14 +93,12 @@ class TestBrain:
             "memories": {
                 "product": "product memory",
                 "developer": "developer memory",
-                "reviewer": "reviewer memory",
             }
         })
         d = BrainDecision.from_claude_output(raw)
         assert d.memories == {
             "product": "product memory",
             "developer": "developer memory",
-            "reviewer": "reviewer memory",
         }
 
     def test_brain_decision_without_memories_defaults_empty(self):
@@ -130,7 +113,7 @@ class TestBrain:
         mock_call.return_value = '{"decision": "PASS", "reason": "ok", "details": "sum"}'
         brain = Brain(orchestrator_cwd=str(ai_loop_dir / "workspaces" / "orchestrator"))
         round_dir = ai_loop_dir / "rounds" / "001"
-        for f in ("requirement.md", "design.md", "dev-log.md", "review.md", "acceptance.md"):
+        for f in ("requirement.md", "design.md", "dev-log.md", "acceptance.md"):
             (round_dir / f).write_text(f"# {f}")
 
         brain.decide("round_summary", round_dir=round_dir)
@@ -139,7 +122,6 @@ class TestBrain:
         assert "memories" in prompt
         assert "product" in prompt
         assert "developer" in prompt
-        assert "reviewer" in prompt
 
     @patch("ai_loop.brain.RoleRunner.call")
     def test_round_summary_no_generic_format_hint(self, mock_call: MagicMock, ai_loop_dir: Path):

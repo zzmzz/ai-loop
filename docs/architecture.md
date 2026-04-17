@@ -16,17 +16,17 @@
                     └────────┬────────┘
                              │
             ┌────────────────┼────────────────┐
-            │                │                │
-            ▼                ▼                ▼
-    ┌───────────┐    ┌──────────────┐   ┌───────────┐
-    │  Product   │    │  Developer   │   │ Reviewer  │
-    │  Agent     │    │  Agent       │   │ Agent     │
-    │            │    │              │   │           │
-    │ Playwright │    │ TDD + Code   │   │ 5维审查    │
-    │ 浏览器体验  │    │ 编辑写测试    │   │ 只读分析   │
-    └───────────┘    └──────────────┘   └───────────┘
-            │                │                │
-            └────────────────┼────────────────┘
+            │                                │
+            ▼                                ▼
+    ┌──────────────────┐    ┌──────────────┐
+    │  Product Agent   │    │  Developer   │
+    │                  │    │  Agent       │
+    │ 需求探索 + QA    │    │              │
+    │ Playwright/CLI   │    │ TDD + Code   │
+    │ 系统化测试+验收   │    │ 编辑写测试    │
+    └──────────────────┘    └──────────────┘
+            │                        │
+            └────────────┬───────────┘
                              │
                     ┌────────▼────────┐
                     │     Brain       │  ← 决策大脑：每个阶段做判断
@@ -44,9 +44,8 @@
 | **Orchestrator** | `orchestrator.py` | 驱动流程、管理 Server、调度角色和 Brain | [编排引擎](orchestration.md) |
 | **Brain** | `brain.py` | 6 个决策点的独立裁判，代码摘要生成，记忆压缩 | [决策系统](brain.md) |
 | **RoleRunner** | `roles/base.py` | Claude Code CLI 流式 JSON 双向通信封装 | [角色系统](roles.md) |
-| **ProductRole** | `roles/product.py` | 需求探索、澄清、验收（区分 web/cli）；维护 `.ai-loop/product-knowledge/` 认知库 | [角色系统](roles.md) |
+| **ProductRole** | `roles/product.py` | 需求探索、澄清、QA 测试 + 验收（区分 web/cli）；维护 `.ai-loop/product-knowledge/` 认知库 | [角色系统](roles.md) |
 | **DeveloperRole** | `roles/developer.py` | 技术设计、TDD 实现、审查修复 | [角色系统](roles.md) |
-| **ReviewerRole** | `roles/reviewer.py` | 5 维代码审查 | [角色系统](roles.md) |
 | **MemoryManager** | `memory.py` | 累积记忆追加、滑动窗口压缩；包版本变化时刷新 CLAUDE.md 模板段（保留 `## 累积记忆` 之后） | [记忆与上下文](memory-context.md) |
 | **ContextCollector** | `context.py` | 阶段间产物自动注入 | [记忆与上下文](memory-context.md) |
 | **AiLoopConfig** | `config.py` | 配置加载校验，支持 web/cli/library | [配置参考](config-reference.md) |
@@ -66,9 +65,8 @@ CLI (cli.py)
      ├→ Brain                         ← 决策（内部有独立 RoleRunner）
      ├→ MemoryManager                 ← 记忆管理
      ├→ ContextCollector              ← 上下文注入
-     ├→ ProductRole + RoleRunner      ← 产品经理
-     ├→ DeveloperRole + RoleRunner    ← 开发者
-     └→ ReviewerRole + RoleRunner     ← 审查者
+     ├→ ProductRole + RoleRunner      ← 产品经理 + QA
+     └→ DeveloperRole + RoleRunner    ← 开发者
 ```
 
 每个 RoleRunner 通过 `claude --output-format stream-json --input-format stream-json` 与 Claude Code CLI 进行双向通信。角色对象（ProductRole 等）负责构建 prompt，RoleRunner 负责执行调用和解析输出。
@@ -91,20 +89,14 @@ Round N 开始
 │      (注入 design.md)                     ├─ PROCEED → 继续
 │                                           └─ RETRY   → 补完
 │
-├─ 4. Reviewer 审查  ─→ review.md      ─→ Brain: post_review
-│      (注入 requirement + design + dev-log) ├─ APPROVE    → 继续
-│      (最多 3 轮)                           ├─ SKIP_MINOR → 继续
-│                                           ├─ REWORK     → Developer 修复 → 重新审查
-│                                           └─ ESCALATE   → 人类介入
-│
-├─ 5. Product 验收   ─→ acceptance.md  ─→ Brain: post_acceptance
+├─ 4. Product QA 验收 ─→ acceptance.md ─→ Brain: post_acceptance
 │      (注入 requirement + dev-log)          ├─ PASS       → 完成
 │      (最多 2 轮)                           ├─ PARTIAL_OK → 完成（下轮处理）
-│                                           ├─ FAIL_IMPL  → Developer 修复 → 重新验收
+│      (系统化测试+需求验收)                   ├─ FAIL_IMPL  → Developer 修复 → 重新验收
 │                                           ├─ FAIL_REQ   → Product 重探索 → 重新实现
 │                                           └─ ESCALATE   → 人类介入
 │
-├─ 6. Brain 总结     ─→ 角色专属记忆写入 CLAUDE.md
+├─ 5. Brain 总结     ─→ 角色专属记忆写入 CLAUDE.md
 │                    ─→ code-digest.md 更新
 │
 └─ 状态推进 → Round N+1
@@ -126,8 +118,7 @@ Round N 开始
 │   │   ├── design.md           # 技术设计（Developer 输出）
 │   │   ├── clarification.md    # 澄清回答（Product 输出，可选）
 │   │   ├── dev-log.md          # 开发日志（Developer 输出）
-│   │   ├── review.md           # 审查报告（Reviewer 输出）
-│   │   └── acceptance.md       # 验收结果（Product 输出）
+│   │   └── acceptance.md       # QA 测试 + 验收结果（Product 输出）
 │   └── 002/
 │       └── ...
 └── workspaces/
@@ -138,9 +129,7 @@ Round N 开始
     ├── developer/
     │   ├── CLAUDE.md
     │   └── notes/
-    └── reviewer/
-        ├── CLAUDE.md
-        └── notes/
+    └── (reviewer/ 已废弃，不再创建)
 ```
 
 ## Claude Code 集成方式
@@ -160,6 +149,6 @@ proc = subprocess.Popen(cmd, stdin=PIPE, stdout=PIPE, cwd=workspace)
 ```
 
 **隔离机制**：
-- **工具隔离** — Product：`Read`/`Glob`/`Grep`/`Bash`/`Write`（`Write` 仅用于写入 `product-knowledge/`）；Developer 能 `Edit`+`Write`+`Bash` 等；Reviewer 只读
+- **工具隔离** — Product：`Read`/`Glob`/`Grep`/`Bash`/`Write`（`Write` 仅用于写入 `product-knowledge/`）；Developer 能 `Edit`+`Write`+`Bash` 等
 - **上下文隔离** — 每个角色有独立的 CLAUDE.md 工作空间
 - **双向通信** — 通过 stream-json 格式实现 prompt → result → follow-up 的多轮对话

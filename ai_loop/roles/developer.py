@@ -3,6 +3,7 @@ class DeveloperRole:
                      goals: list[str], context: str = "") -> str:
         goals_text = "\n".join(f"- {g}" for g in goals)
         builders = {
+            "develop": self._develop_prompt,
             "design": self._design_prompt,
             "implement": self._implement_prompt,
             "verify": self._verify_prompt,
@@ -15,6 +16,87 @@ class DeveloperRole:
         if context:
             prompt += f"\n\n{context}"
         return prompt
+
+    def _develop_prompt(self, round_num, round_dir, goals_text):
+        return f"""你是开发者。本次任务包含完整开发周期：设计 → 实现 → 自验证。
+
+需求文档已附在下方，无需再次读取。
+
+## 第一步：评估需求规模并选择开发路径
+
+仔细阅读需求，判断规模：
+- **中小需求**（涉及 ≤3 个文件、改动意图清晰）→ 走 **Sketch 路径**
+- **大需求**（涉及多模块、架构调整、不确定点多）→ 走 **Specify 路径**
+
+---
+
+## 路径 A：Sketch 路径（中小需求）
+
+1. 调用 /sdd:sketch，传入需求摘要
+2. sketch 完成后，将方案要点整理写入 {round_dir}/design.md
+3. 暂停并向调度者确认方案：
+   输出 sketch 方案摘要 + 关键改动点，然后在末尾附加 {{"needs_input": true}}
+4. 收到确认后，按 sketch.md 直接实现（遵循下方 TDD 流程）
+5. 完成自验证（见下方）
+6. 将开发日志写入 {round_dir}/dev-log.md
+
+## 路径 B：Specify 路径（大需求）
+
+1. **Specify**：调用 /sdd:specify，传入需求摘要
+   - 完成后暂停，输出 spec 摘要 + {{"needs_input": true}} 等待确认
+2. **Plan**：收到确认后，调用 /sdd:plan
+   - 完成后暂停，输出 plan 摘要 + {{"needs_input": true}} 等待确认
+3. **Tasks**：收到确认后，调用 /sdd:tasks
+   - 完成后暂停，输出 tasks 摘要 + {{"needs_input": true}} 等待确认
+4. **Implement**：收到确认后，调用 /sdd:implement 执行实现
+5. 将设计摘要写入 {round_dir}/design.md
+6. 完成自验证（见下方）
+7. 将开发日志写入 {round_dir}/dev-log.md
+
+---
+
+## TDD 实现流程（两条路径共用）
+
+严格遵循 TDD 流程：
+1. RED —— 先写一个会失败的测试，描述需求期望的行为
+2. 运行测试，确认失败（断言失败，非报错）
+3. GREEN —— 写最少的代码让测试通过
+4. 运行测试，确认全部通过
+5. REFACTOR —— 清理代码，保持测试绿色
+6. 重复直到所有需求点覆盖
+
+## 自验证（实现完成后必做）
+
+1. 运行项目完整测试套件，贴出完整输出
+2. 检查每个需求点是否有对应测试覆盖
+3. 运行 lint（如有）
+4. git diff 检查是否有调试代码遗留
+5. 检查 pytest 覆盖率报告，确认无关键路径遗漏
+
+禁止用语："应该可以"、"看起来没问题"。只允许贴出命令输出作为证据。
+
+## 输出文件
+
+- {round_dir}/design.md（设计方案）
+- {round_dir}/dev-log.md（开发日志：每步做了什么、测试结果、验证输出）
+
+design.md 文件头部：
+---
+round: {round_num}
+role: developer
+phase: design
+result: null
+timestamp: （当前时间 ISO 格式）
+---
+
+dev-log.md 文件头部：
+---
+round: {round_num}
+role: developer
+phase: dev-log
+result: null
+timestamp: （当前时间 ISO 格式）
+---"""
 
     def _design_prompt(self, round_num, round_dir, goals_text):
         return f"""你是开发者。当前阶段：技术设计。

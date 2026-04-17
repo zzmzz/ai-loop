@@ -6,12 +6,12 @@ class ContextCollector:
 
     PHASE_DEPS = {
         "product:explore": [],
+        "developer:develop": ["requirement.md"],
         "developer:design": ["requirement.md"],
         "product:clarify": ["design.md"],
-        "developer:implement": ["design.md", "clarification.md"],
+        "developer:implement": ["design.md", "clarification.md", "acceptance.md"],
         "developer:verify": ["requirement.md"],
-        "reviewer:review": ["requirement.md", "design.md", "dev-log.md"],
-        "product:acceptance": ["requirement.md", "dev-log.md"],
+        "product:qa_acceptance": ["requirement.md", "dev-log.md"],
         "developer:fix_review": ["review.md"],
     }
 

@@ -106,7 +106,7 @@ RoleRunner 是所有角色调用的底层，改动影响面最大。
 - `_has_needs_input` / `_extract_question` 的标记格式 `{"needs_input": true}` 被角色 prompt 和 Orchestrator 共同依赖
 - 超时/错误处理要确保进程被正确清理
 
-### roles/product.py, developer.py, reviewer.py
+### roles/product.py, developer.py
 
 角色行为由 prompt 模板驱动。改动 prompt 本质上是在改变 Agent 行为。
 

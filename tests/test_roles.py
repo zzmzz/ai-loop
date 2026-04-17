@@ -172,7 +172,6 @@ class TestRoleRunner:
 
 from ai_loop.roles.product import ProductRole
 from ai_loop.roles.developer import DeveloperRole
-from ai_loop.roles.reviewer import ReviewerRole
 from ai_loop.config import VerificationConfig
 
 
@@ -185,15 +184,16 @@ class TestProductRole:
         assert "requirement.md" in prompt
         assert "Fix login" in prompt
 
-    def test_acceptance_prompt_includes_requirement(self):
+    def test_qa_acceptance_prompt_includes_requirement(self):
         verification = VerificationConfig(type="web", base_url="http://localhost:3000")
         role = ProductRole(verification=verification, knowledge_dir=Path("/tmp/pk"))
-        prompt = role.build_prompt("acceptance", round_num=1, round_dir="/r/001", goals=["Fix login"])
+        prompt = role.build_prompt("qa_acceptance", round_num=1, round_dir="/r/001", goals=["Fix login"])
         assert "acceptance.md" in prompt
         assert "PASS" in prompt and "FAIL" in prompt
-        # REQ-1: should NOT instruct to read requirement.md
-        assert "阅读本轮需求" not in prompt
         assert "下方附带的需求文档" in prompt
+        assert "系统化探索" in prompt
+        assert "健康评分" in prompt
+        assert "Critical" in prompt
 
     def test_clarify_prompt(self):
         verification = VerificationConfig(type="web", base_url="http://localhost:3000")
@@ -223,22 +223,23 @@ class TestProductRoleCli:
         assert "code-digest.md" in prompt
         assert "变更部分" in prompt
 
-    def test_acceptance_prompt_cli_uses_test_command(self):
+    def test_qa_acceptance_prompt_cli_uses_test_command(self):
         verification = VerificationConfig(
             type="cli",
             test_command="pytest tests/ -v",
             run_examples=["my-cli --help"],
         )
         role = ProductRole(verification=verification, knowledge_dir=Path("/tmp/pk"))
-        prompt = role.build_prompt("acceptance", round_num=1, round_dir="/r/001", goals=["Add feature"])
+        prompt = role.build_prompt("qa_acceptance", round_num=1, round_dir="/r/001", goals=["Add feature"])
 
         assert "pytest tests/ -v" in prompt
         assert "my-cli --help" in prompt
         assert "Playwright" not in prompt
         assert "PASS" in prompt and "FAIL" in prompt
-        # REQ-1: should NOT instruct to read requirement.md
-        assert "阅读本轮需求" not in prompt
         assert "下方附带的需求文档" in prompt
+        assert "系统化探索" in prompt
+        assert "健康评分" in prompt
+        assert "Critical" in prompt
 
     def test_context_appended_to_prompt(self):
         verification = VerificationConfig(type="cli", test_command="pytest")
@@ -268,20 +269,57 @@ class TestProductRoleWeb:
         assert "code-digest.md" in prompt
         assert "变更部分" in prompt
 
-    def test_acceptance_prompt_web_uses_playwright(self):
+    def test_qa_acceptance_prompt_web_uses_playwright(self):
         verification = VerificationConfig(
             type="web",
             base_url="http://localhost:3000",
         )
         role = ProductRole(verification=verification, knowledge_dir=Path("/tmp/pk"))
-        prompt = role.build_prompt("acceptance", round_num=1, round_dir="/r/001", goals=["Fix login"])
+        prompt = role.build_prompt("qa_acceptance", round_num=1, round_dir="/r/001", goals=["Fix login"])
 
         assert "http://localhost:3000" in prompt
         assert "Playwright" in prompt
         assert "PASS" in prompt and "FAIL" in prompt
+        assert "系统化探索" in prompt
+        assert "健康评分" in prompt
 
 
 class TestDeveloperRole:
+    def test_develop_prompt_contains_dual_paths(self):
+        role = DeveloperRole()
+        prompt = role.build_prompt("develop", round_num=1, round_dir="/r/001", goals=["Fix login"])
+        assert "/sdd:sketch" in prompt
+        assert "/sdd:specify" in prompt
+        assert "/sdd:plan" in prompt
+        assert "/sdd:tasks" in prompt
+        assert "/sdd:implement" in prompt
+        assert "design.md" in prompt
+        assert "dev-log.md" in prompt
+        assert "TDD" in prompt
+        assert "needs_input" in prompt
+        assert "已附在下方" in prompt
+
+    def test_develop_prompt_sketch_path(self):
+        role = DeveloperRole()
+        prompt = role.build_prompt("develop", round_num=1, round_dir="/r/001", goals=["Fix login"])
+        assert "Sketch 路径" in prompt or "路径 A" in prompt
+        assert "sketch.md" in prompt
+
+    def test_develop_prompt_specify_path(self):
+        role = DeveloperRole()
+        prompt = role.build_prompt("develop", round_num=1, round_dir="/r/001", goals=["Fix login"])
+        assert "Specify 路径" in prompt or "路径 B" in prompt
+        assert "/sdd:specify" in prompt
+        assert "/sdd:plan" in prompt
+        assert "/sdd:tasks" in prompt
+
+    def test_develop_prompt_self_verification(self):
+        role = DeveloperRole()
+        prompt = role.build_prompt("develop", round_num=1, round_dir="/r/001", goals=["Fix login"])
+        assert "自验证" in prompt
+        assert "覆盖率" in prompt
+        assert "lint" in prompt
+
     def test_design_prompt(self):
         role = DeveloperRole()
         prompt = role.build_prompt("design", round_num=1, round_dir="/r/001", goals=["Fix login"])
@@ -341,31 +379,3 @@ class TestDeveloperRoleContext:
         assert "design.md" in prompt  # original content still present
 
 
-class TestReviewerRole:
-    def test_review_prompt(self):
-        role = ReviewerRole()
-        prompt = role.build_prompt("review", round_num=1, round_dir="/r/001", goals=["Fix login"])
-        assert "git diff" in prompt
-        assert "APPROVE" in prompt
-        assert "REQUEST_CHANGES" in prompt
-        # REQ-1: should NOT list file paths to read
-        assert "1. 需求：" not in prompt
-        assert "2. 设计：" not in prompt
-        assert "已附在下方" in prompt
-
-    def test_review_prompt_mentions_coverage(self):
-        role = ReviewerRole()
-        prompt = role.build_prompt("review", round_num=1, round_dir="/r/001", goals=["Fix login"])
-        assert "覆盖率" in prompt
-
-
-class TestReviewerRoleContext:
-    def test_context_appended_to_review_prompt(self):
-        role = ReviewerRole()
-        prompt = role.build_prompt(
-            "review", round_num=1, round_dir="/r/001",
-            goals=["Fix login"], context="## requirement.md\nThe requirement",
-        )
-        assert "## requirement.md" in prompt
-        assert "The requirement" in prompt
-        assert "git diff" in prompt  # original content still present

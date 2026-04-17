@@ -14,7 +14,7 @@ class ProductRole:
         builders = {
             "explore": self._explore_prompt,
             "clarify": self._clarify_prompt,
-            "acceptance": self._acceptance_prompt,
+            "qa_acceptance": self._qa_acceptance_prompt,
         }
         builder = builders.get(phase)
         if builder is None:
@@ -224,84 +224,188 @@ result: null
 timestamp: （当前时间 ISO 格式）
 ---"""
 
-    def _acceptance_prompt(self, round_num, round_dir, goals_text):
+    def _qa_acceptance_prompt(self, round_num, round_dir, goals_text):
         if self.verification.type == "web":
-            return self._acceptance_prompt_web(round_num, round_dir, goals_text)
-        return self._acceptance_prompt_cli(round_num, round_dir, goals_text)
+            return self._qa_acceptance_prompt_web(round_num, round_dir, goals_text)
+        return self._qa_acceptance_prompt_cli(round_num, round_dir, goals_text)
 
-    def _acceptance_prompt_web(self, round_num, round_dir, goals_text):
+    def _qa_acceptance_prompt_web(self, round_num, round_dir, goals_text):
         kd = self._knowledge_dir
-        return f"""你是产品经理。你的任务是验收本轮开发成果。
+        return f"""你是 QA 工程师兼产品经理。你的任务是对本轮开发成果进行系统化测试与验收。
+
+当前目标：
+{goals_text}
+
+## 工作流程
+
+### 第一阶段：需求验证（必做）
 
 1. 参考下方附带的需求文档（注意每条需求的优先级 P0/P1/P2）
 2. 编写 Playwright Python 脚本访问 {self.verification.base_url}，逐条验证需求是否被满足
-3. 每条需求验证前后各截一张图，命名规则：
+3. 每条需求验证前后各截一张图作为证据：
    - `notes/accept-{{需求编号}}-before.png`（操作前状态）
    - `notes/accept-{{需求编号}}-after.png`（操作后状态）
-4. 输出验收结果
-5. 根据验收结果更新 `{kd}/` 下的相关产品认知子文档，记录本轮改进效果
 
-输出文件：{round_dir}/acceptance.md
+### 第二阶段：系统化探索（必做）
+
+需求验证完成后，主动探索产品寻找需求未覆盖的问题：
+
+1. **核心流程走查**：从用户视角走完主要业务流程，关注边界情况
+2. **交互完整性**：检查按钮响应、表单验证、错误提示、加载状态
+3. **跨页面一致性**：导航、布局、样式在不同页面间是否一致
+4. **异常场景**：网络错误、空数据、超长输入、并发操作
+5. 每个发现的问题都截图保存到 `notes/explore-{{序号}}.png`
+
+### 第三阶段：汇总评估
+
+1. 对所有发现的问题进行分级
+2. 计算健康评分
+3. 更新 `{kd}/` 下的相关产品认知子文档
+
+## 问题严重级别
+
+- **Critical**：功能完全不可用、数据丢失、安全漏洞 — 必须立即修复
+- **High**：核心流程受阻、严重影响用户体验 — 应在本轮修复
+- **Medium**：非核心功能异常、体验不佳但有 workaround — 建议下轮处理
+- **Low**：美观问题、文案优化、边缘场景 — 记入延迟池
+
+## 输出文件：{round_dir}/acceptance.md
 
 文件头部：
 ---
 round: {round_num}
 role: product
-phase: acceptance
+phase: qa_acceptance
 result: PASS / PARTIAL / FAIL
 timestamp: （当前时间 ISO 格式）
 ---
 
-## 验收结果判定规则
+文件正文按以下结构组织：
 
-逐条验证需求，每条给出：
-- 需求编号和标题
-- 优先级（P0/P1/P2）
-- 结果：PASS / FAIL
-- 截图路径（before/after）
-- FAIL 时附原因
+### 需求验证
 
-## result 总判定
+| 需求 | 优先级 | 结果 | 证据 | 备注 |
+|------|--------|------|------|------|
+| REQ-N: 标题 | P0/P1/P2 | PASS/FAIL | notes/accept-N-after.png | FAIL 时附原因 |
 
-- **PASS**：所有需求均通过
-- **PARTIAL**：P0 全部通过，但存在 P1 或 P2 未通过
-- **FAIL**：任何 P0 未通过"""
+### 探索发现
 
-    def _acceptance_prompt_cli(self, round_num, round_dir, goals_text):
+| # | 问题描述 | 严重级别 | 证据 | 建议 |
+|---|----------|----------|------|------|
+| 1 | 描述 | Critical/High/Medium/Low | notes/explore-1.png | 修复建议 |
+
+### 健康评分
+
+**总分: X / 100**
+
+| 维度 | 得分 | 说明 |
+|------|------|------|
+| 需求满足 | /50 | P0 全过 +30，P1 每条 +10，P2 每条 +5 |
+| 功能稳定性 | /25 | 无 Critical=25，有 Critical=0，每个 High -5 |
+| 用户体验 | /25 | 基于探索发现的 Medium/Low 问题数量扣分 |
+
+### 总判定
+
+result: PASS / PARTIAL / FAIL
+reason: 一句话总结
+
+### 延迟池
+
+列出非本轮范围的发现（Medium/Low），供下轮参考
+
+## result 总判定规则
+
+- **PASS**：所有需求通过，无 Critical/High 探索发现，健康评分 ≥ 80
+- **PARTIAL**：P0 全部通过但存在 P1/P2 未通过，或有 High 探索发现，健康评分 60-79
+- **FAIL**：任何 P0 未通过，或有 Critical 探索发现，或健康评分 < 60"""
+
+    def _qa_acceptance_prompt_cli(self, round_num, round_dir, goals_text):
         examples = "\n".join(f"  - `{e}`" for e in self.verification.run_examples)
         kd = self._knowledge_dir
-        return f"""你是产品经理。你的任务是验收本轮开发成果。
+        return f"""你是 QA 工程师兼产品经理。你的任务是对本轮开发成果进行系统化测试与验收。
+
+当前目标：
+{goals_text}
+
+## 工作流程
+
+### 第一阶段：需求验证（必做）
 
 1. 参考下方附带的需求文档（注意每条需求的优先级 P0/P1/P2）
 2. 运行测试命令确认全部通过：`{self.verification.test_command}`
 3. 执行以下示例命令，验证 CLI 行为符合预期：
 {examples}
 4. 将关键命令输出保存为证据：`notes/accept-{{需求编号}}-output.txt`
-5. 逐条对照需求，判定是否满足
-6. 根据验收结果更新 `{kd}/` 下的相关产品认知子文档，记录本轮改进效果
 
-输出文件：{round_dir}/acceptance.md
+### 第二阶段：系统化探索（必做）
+
+需求验证完成后，主动探索产品寻找需求未覆盖的问题：
+
+1. **边界输入测试**：空参数、超长参数、特殊字符、无效路径
+2. **错误处理**：各命令的错误提示是否清晰、退出码是否正确
+3. **帮助信息**：--help 输出是否完整准确
+4. **兼容性**：不同参数组合是否正常工作
+5. 每个发现的问题保存命令输出到 `notes/explore-{{序号}}-output.txt`
+
+### 第三阶段：汇总评估
+
+1. 对所有发现的问题进行分级
+2. 计算健康评分
+3. 更新 `{kd}/` 下的相关产品认知子文档
+
+## 问题严重级别
+
+- **Critical**：功能完全不可用、数据丢失、安全漏洞 — 必须立即修复
+- **High**：核心流程受阻、严重影响用户体验 — 应在本轮修复
+- **Medium**：非核心功能异常、体验不佳但有 workaround — 建议下轮处理
+- **Low**：美观问题、文案优化、边缘场景 — 记入延迟池
+
+## 输出文件：{round_dir}/acceptance.md
 
 文件头部：
 ---
 round: {round_num}
 role: product
-phase: acceptance
+phase: qa_acceptance
 result: PASS / PARTIAL / FAIL
 timestamp: （当前时间 ISO 格式）
 ---
 
-## 验收结果判定规则
+文件正文按以下结构组织：
 
-逐条验证需求，每条给出：
-- 需求编号和标题
-- 优先级（P0/P1/P2）
-- 结果：PASS / FAIL
-- 证据（截图路径或命令输出文件路径）
-- FAIL 时附原因
+### 需求验证
 
-## result 总判定
+| 需求 | 优先级 | 结果 | 证据 | 备注 |
+|------|--------|------|------|------|
+| REQ-N: 标题 | P0/P1/P2 | PASS/FAIL | notes/accept-N-output.txt | FAIL 时附原因 |
 
-- **PASS**：所有需求均通过
-- **PARTIAL**：P0 全部通过，但存在 P1 或 P2 未通过
-- **FAIL**：任何 P0 未通过"""
+### 探索发现
+
+| # | 问题描述 | 严重级别 | 证据 | 建议 |
+|---|----------|----------|------|------|
+| 1 | 描述 | Critical/High/Medium/Low | notes/explore-1-output.txt | 修复建议 |
+
+### 健康评分
+
+**总分: X / 100**
+
+| 维度 | 得分 | 说明 |
+|------|------|------|
+| 需求满足 | /50 | P0 全过 +30，P1 每条 +10，P2 每条 +5 |
+| 功能稳定性 | /25 | 无 Critical=25，有 Critical=0，每个 High -5 |
+| 用户体验 | /25 | 基于探索发现的 Medium/Low 问题数量扣分 |
+
+### 总判定
+
+result: PASS / PARTIAL / FAIL
+reason: 一句话总结
+
+### 延迟池
+
+列出非本轮范围的发现（Medium/Low），供下轮参考
+
+## result 总判定规则
+
+- **PASS**：所有需求通过，无 Critical/High 探索发现，健康评分 ≥ 80
+- **PARTIAL**：P0 全部通过但存在 P1/P2 未通过，或有 High 探索发现，健康评分 60-79
+- **FAIL**：任何 P0 未通过，或有 Critical 探索发现，或健康评分 < 60"""

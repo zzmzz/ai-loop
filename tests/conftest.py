@@ -70,7 +70,7 @@ def ai_loop_dir(tmp_project: Path, sample_config: dict) -> Path:
     (ai_dir / "rounds").mkdir()
     (ai_dir / "rounds" / "001").mkdir()
     workspaces = ai_dir / "workspaces"
-    for role in ("orchestrator", "product", "developer", "reviewer"):
+    for role in ("orchestrator", "product", "developer"):
         ws = workspaces / role
         ws.mkdir(parents=True)
         (ws / "CLAUDE.md").write_text(f"# Role: {role}\n")
@@ -97,7 +97,7 @@ def cli_ai_loop_dir(tmp_path: Path, cli_sample_config: dict) -> Path:
     (ai_dir / "rounds").mkdir()
     (ai_dir / "rounds" / "001").mkdir()
     workspaces = ai_dir / "workspaces"
-    for role in ("orchestrator", "product", "developer", "reviewer"):
+    for role in ("orchestrator", "product", "developer"):
         ws = workspaces / role
         ws.mkdir(parents=True)
         (ws / "CLAUDE.md").write_text(f"# Role: {role}\n")

@@ -77,9 +77,8 @@ Orchestrator 在检测到已安装包版本与 `state.json` 中的 `ai_loop_vers
 
 | 角色 | 记忆侧重 |
 |------|----------|
-| product | 需求变更、用户反馈、验收结果 |
+| product | 需求变更、用户反馈、验收结果、QA 发现 |
 | developer | 技术决策、架构变更、代码模式 |
-| reviewer | 审查发现的模式、反复出现的问题 |
 
 Orchestrator 在 `_update_all_memories()` 中将专属记忆写入对应角色的 CLAUDE.md。如果 Brain 没有返回某角色的专属记忆，则使用通用 summary 兜底。
 
@@ -95,8 +94,7 @@ developer:design     → requirement.md
 product:clarify      → design.md
 developer:implement  → design.md, clarification.md
 developer:verify     → requirement.md
-reviewer:review      → requirement.md, design.md, dev-log.md
-product:acceptance   → requirement.md, dev-log.md
+product:qa_acceptance → requirement.md, dev-log.md
 developer:fix_review → review.md
 ```
 

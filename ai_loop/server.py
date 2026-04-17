@@ -1,9 +1,14 @@
+import logging
+import os
 import signal
 import subprocess
 import time
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse
 import requests
+
+logger = logging.getLogger(__name__)
 
 
 class DevServer:
@@ -29,6 +34,8 @@ class DevServer:
         if self.is_running():
             return
 
+        self._kill_port_holders()
+
         self._log_fh = open(self._log_path, "a") if self._log_path else None
         self._process = subprocess.Popen(
             self._start_command,
@@ -38,6 +45,32 @@ class DevServer:
             stderr=subprocess.STDOUT,
         )
         self._wait_healthy()
+
+    def _kill_port_holders(self) -> None:
+        """Kill processes occupying the health-check port before starting."""
+        try:
+            parsed = urlparse(self._health_url)
+            port = parsed.port
+            if not port:
+                return
+            result = subprocess.run(
+                ["lsof", "-ti", f":{port}"],
+                capture_output=True, text=True, timeout=5,
+            )
+            pids = result.stdout.strip()
+            if not pids:
+                return
+            for pid in pids.split("\n"):
+                pid = pid.strip()
+                if pid:
+                    try:
+                        os.kill(int(pid), signal.SIGTERM)
+                        logger.info("Killed process %s on port %d", pid, port)
+                    except (ProcessLookupError, ValueError):
+                        pass
+            time.sleep(0.5)
+        except Exception as e:
+            logger.warning("Failed to kill port holders: %s", e)
 
     def _wait_healthy(self) -> None:
         deadline = time.time() + self._health_timeout

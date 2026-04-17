@@ -141,7 +141,6 @@ def init(project_path, name, project_type, start_command, health_url, base_url, 
         "orchestrator": "orchestrator_claude.md",
         "product": "product_claude.md",
         "developer": "developer_claude.md",
-        "reviewer": "reviewer_claude.md",
     }
 
     for role_name, template_name in role_template_map.items():

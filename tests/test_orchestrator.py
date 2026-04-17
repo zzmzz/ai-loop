@@ -30,12 +30,9 @@ class TestOrchestrator:
         # Brain always approves
         mock_brain.return_value = BrainDecision(decision="PROCEED", reason="ok")
 
-        # Override acceptance brain call to return PASS
         def brain_side_effect(point, **kwargs):
             if point == "post_acceptance":
                 return BrainDecision(decision="PASS", reason="ok")
-            if point == "post_review":
-                return BrainDecision(decision="APPROVE", reason="ok")
             if point == "round_summary":
                 return BrainDecision(decision="PASS", reason="ok", details="Good round")
             return BrainDecision(decision="PROCEED", reason="ok")
@@ -49,41 +46,11 @@ class TestOrchestrator:
         # Verify roles were called in correct order
         role_calls = [c[0][0] for c in mock_role.call_args_list]
         assert "product:explore" in role_calls
-        assert "developer:design" in role_calls
-        assert "developer:implement" in role_calls
-        assert "reviewer:review" in role_calls
-        assert "product:acceptance" in role_calls
-
-    @patch.object(Orchestrator, "_update_code_digest")
-    @patch.object(Orchestrator, "_call_role")
-    @patch.object(Orchestrator, "_ask_brain")
-    @patch.object(Orchestrator, "_server_start")
-    @patch.object(Orchestrator, "_server_stop")
-    def test_review_rework_loop(
-        self, mock_stop, mock_start, mock_brain, mock_role, mock_digest, orch: Orchestrator
-    ):
-        call_count = {"review": 0}
-
-        def brain_side_effect(point, **kwargs):
-            if point == "post_review":
-                call_count["review"] += 1
-                if call_count["review"] < 3:
-                    return BrainDecision(decision="REWORK", reason="needs fix")
-                return BrainDecision(decision="APPROVE", reason="ok now")
-            if point == "post_acceptance":
-                return BrainDecision(decision="PASS", reason="ok")
-            if point == "round_summary":
-                return BrainDecision(decision="PASS", reason="ok", details="Done")
-            return BrainDecision(decision="PROCEED", reason="ok")
-
-        mock_brain.side_effect = brain_side_effect
-        mock_role.return_value = None
-
-        orch.run_single_round()
-
-        # Developer fix_review should have been called twice
-        role_calls = [c[0][0] for c in mock_role.call_args_list]
-        assert role_calls.count("developer:fix_review") == 2
+        assert "developer:develop" in role_calls
+        assert "product:qa_acceptance" in role_calls
+        assert "reviewer:review" not in role_calls
+        assert "developer:design" not in role_calls
+        assert "developer:implement" not in role_calls
 
 
 @pytest.fixture
@@ -102,7 +69,7 @@ class TestOrchestratorMemoryCompact:
     ):
         """REQ-3: _update_all_memories should trigger compact when rounds > window."""
         # Pre-populate memories so count exceeds window
-        for role_name in ("orchestrator", "product", "developer", "reviewer"):
+        for role_name in ("orchestrator", "product", "developer"):
             claude_md = orch._dir / "workspaces" / role_name / "CLAUDE.md"
             text = claude_md.read_text()
             if "## 累积记忆" not in text:
@@ -116,8 +83,6 @@ class TestOrchestratorMemoryCompact:
         def brain_side_effect(point, **kwargs):
             if point == "post_acceptance":
                 return BrainDecision(decision="PASS", reason="ok")
-            if point == "post_review":
-                return BrainDecision(decision="APPROVE", reason="ok")
             if point == "round_summary":
                 return BrainDecision(decision="PASS", reason="ok", details="Good round")
             return BrainDecision(decision="PROCEED", reason="ok")
@@ -127,8 +92,7 @@ class TestOrchestratorMemoryCompact:
 
         with patch.object(orch._memory, "compact_memories") as mock_compact:
             orch.run_single_round()
-            # compact_memories should have been called for each role's CLAUDE.md
-            assert mock_compact.call_count == 4
+            assert mock_compact.call_count == 3
 
 
 class TestOrchestratorRoleSpecificMemories:
@@ -141,8 +105,7 @@ class TestOrchestratorRoleSpecificMemories:
         self, mock_stop, mock_start, mock_brain, mock_role, mock_digest, orch: Orchestrator
     ):
         """REQ-4: Different roles should get different memory content."""
-        # Ensure CLAUDE.md has memory section
-        for role_name in ("orchestrator", "product", "developer", "reviewer"):
+        for role_name in ("orchestrator", "product", "developer"):
             claude_md = orch._dir / "workspaces" / role_name / "CLAUDE.md"
             text = claude_md.read_text()
             if "## 累积记忆" not in text:
@@ -151,15 +114,12 @@ class TestOrchestratorRoleSpecificMemories:
         def brain_side_effect(point, **kwargs):
             if point == "post_acceptance":
                 return BrainDecision(decision="PASS", reason="ok")
-            if point == "post_review":
-                return BrainDecision(decision="APPROVE", reason="ok")
             if point == "round_summary":
                 return BrainDecision(
                     decision="PASS", reason="ok", details="generic summary",
                     memories={
                         "product": "product specific memory",
                         "developer": "developer specific memory",
-                        "reviewer": "reviewer specific memory",
                     },
                 )
             return BrainDecision(decision="PROCEED", reason="ok")
@@ -169,17 +129,12 @@ class TestOrchestratorRoleSpecificMemories:
 
         orch.run_single_round()
 
-        # Check each role got its specific memory
         product_md = (orch._dir / "workspaces" / "product" / "CLAUDE.md").read_text()
         assert "product specific memory" in product_md
 
         developer_md = (orch._dir / "workspaces" / "developer" / "CLAUDE.md").read_text()
         assert "developer specific memory" in developer_md
 
-        reviewer_md = (orch._dir / "workspaces" / "reviewer" / "CLAUDE.md").read_text()
-        assert "reviewer specific memory" in reviewer_md
-
-        # Orchestrator gets generic summary (no key in memories dict)
         orch_md = (orch._dir / "workspaces" / "orchestrator" / "CLAUDE.md").read_text()
         assert "generic summary" in orch_md
 
@@ -196,8 +151,6 @@ class TestOrchestratorCodeDigest:
         def brain_side_effect(point, **kwargs):
             if point == "post_acceptance":
                 return BrainDecision(decision="PASS", reason="ok")
-            if point == "post_review":
-                return BrainDecision(decision="APPROVE", reason="ok")
             if point == "round_summary":
                 return BrainDecision(decision="PASS", reason="ok", details="Good round")
             return BrainDecision(decision="PROCEED", reason="ok")
@@ -394,6 +347,44 @@ some desc
         assert reqs[0]["title"] == "优化记忆机制"
         assert reqs[1]["priority"] == "P1"
 
+    def test_extract_standalone_bold_format(self):
+        """Extract requirements in standalone **[P0] title** without leading dash."""
+        content = """### 具体需求
+
+**[P0] 评分系统指标归一化**
+
+现状：直接对原始指标值加权求和。
+
+**[P1] Agent Prompt 增强**
+
+现状：缺乏量化专业知识引导。
+"""
+        reqs = Orchestrator._extract_requirements(content)
+        assert len(reqs) == 2
+        assert reqs[0]["priority"] == "P0"
+        assert reqs[0]["title"] == "评分系统指标归一化"
+        assert reqs[1]["priority"] == "P1"
+        assert reqs[1]["title"] == "Agent Prompt 增强"
+
+    def test_extract_mixed_formats(self):
+        """Extract requirements mixing standalone and bullet formats."""
+        content = """### 具体需求
+
+**[P0] 核心功能**
+
+描述。
+
+### 延迟池
+
+- **[P1] 附加功能**：描述
+- **[P2] 低优先级**：描述
+"""
+        reqs = Orchestrator._extract_requirements(content)
+        assert len(reqs) == 3
+        assert reqs[0]["priority"] == "P0"
+        assert reqs[1]["priority"] == "P1"
+        assert reqs[2]["priority"] == "P2"
+
     def test_extract_empty_content(self):
         """Empty or irrelevant content returns empty list."""
         assert Orchestrator._extract_requirements("") == []
@@ -540,6 +531,88 @@ class TestConfirmRequirements:
         assert (round_dir / "requirement.md").read_text() == req_content
 
 
+class TestQaAcceptanceRetryLoop:
+    @patch.object(Orchestrator, "_update_code_digest")
+    @patch.object(Orchestrator, "_call_role")
+    @patch.object(Orchestrator, "_ask_brain")
+    @patch.object(Orchestrator, "_server_start")
+    @patch.object(Orchestrator, "_server_stop")
+    def test_fail_impl_triggers_developer_reimpl(
+        self, mock_stop, mock_start, mock_brain, mock_role, mock_digest, orch: Orchestrator
+    ):
+        """FAIL_IMPL should trigger developer:implement then retry qa_acceptance."""
+        call_count = {"brain": 0}
+
+        def brain_side_effect(point, **kwargs):
+            call_count["brain"] += 1
+            if point == "post_acceptance":
+                if call_count["brain"] <= 4:
+                    return BrainDecision(decision="FAIL_IMPL", reason="P0 failed")
+                return BrainDecision(decision="PASS", reason="ok")
+            if point == "round_summary":
+                return BrainDecision(decision="PASS", reason="ok", details="Done")
+            return BrainDecision(decision="PROCEED", reason="ok")
+
+        mock_brain.side_effect = brain_side_effect
+        mock_role.return_value = None
+
+        summary = orch.run_single_round()
+        assert summary is not None
+        role_calls = [c[0][0] for c in mock_role.call_args_list]
+        qa_calls = [c for c in role_calls if c == "product:qa_acceptance"]
+        impl_after_qa = sum(1 for i, c in enumerate(role_calls)
+                           if c == "developer:implement" and i > role_calls.index("product:qa_acceptance"))
+        assert len(qa_calls) >= 2
+        assert impl_after_qa >= 1
+
+    @patch.object(Orchestrator, "_update_code_digest")
+    @patch.object(Orchestrator, "_call_role")
+    @patch.object(Orchestrator, "_ask_brain")
+    @patch.object(Orchestrator, "_server_start")
+    @patch.object(Orchestrator, "_server_stop")
+    def test_max_retries_escalates(
+        self, mock_stop, mock_start, mock_brain, mock_role, mock_digest, orch: Orchestrator
+    ):
+        """Exceeding max_acceptance_retries should ESCALATE."""
+        orch._config.limits.max_acceptance_retries = 1
+
+        def brain_side_effect(point, **kwargs):
+            if point == "post_acceptance":
+                return BrainDecision(decision="FAIL_IMPL", reason="still broken")
+            if point == "round_summary":
+                return BrainDecision(decision="PASS", reason="ok", details="Done")
+            return BrainDecision(decision="PROCEED", reason="ok")
+
+        mock_brain.side_effect = brain_side_effect
+        mock_role.return_value = None
+
+        summary = orch.run_single_round()
+        assert "ESCALATE" in summary
+
+    @patch.object(Orchestrator, "_update_code_digest")
+    @patch.object(Orchestrator, "_call_role")
+    @patch.object(Orchestrator, "_ask_brain")
+    @patch.object(Orchestrator, "_server_start")
+    @patch.object(Orchestrator, "_server_stop")
+    def test_escalate_decision_returns_immediately(
+        self, mock_stop, mock_start, mock_brain, mock_role, mock_digest, orch: Orchestrator
+    ):
+        """ESCALATE decision should exit the loop immediately."""
+        def brain_side_effect(point, **kwargs):
+            if point == "post_acceptance":
+                return BrainDecision(decision="ESCALATE", reason="need human")
+            if point == "round_summary":
+                return BrainDecision(decision="PASS", reason="ok", details="Done")
+            return BrainDecision(decision="PROCEED", reason="ok")
+
+        mock_brain.side_effect = brain_side_effect
+        mock_role.return_value = None
+
+        summary = orch.run_single_round()
+        assert "ESCALATE" in summary
+        assert "need human" in summary
+
+
 class TestOrchestratorCliProject:
     @patch.object(Orchestrator, "_update_code_digest")
     @patch.object(Orchestrator, "_call_role")
@@ -550,8 +623,6 @@ class TestOrchestratorCliProject:
         def brain_side_effect(point, **kwargs):
             if point == "post_acceptance":
                 return BrainDecision(decision="PASS", reason="ok")
-            if point == "post_review":
-                return BrainDecision(decision="APPROVE", reason="ok")
             if point == "round_summary":
                 return BrainDecision(decision="PASS", reason="ok", details="Done")
             return BrainDecision(decision="PROCEED", reason="ok")

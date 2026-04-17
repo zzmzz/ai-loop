@@ -25,8 +25,9 @@ class TestInitCommand:
         assert (ai_dir / "config.yaml").exists()
         assert (ai_dir / "state.json").exists()
         assert (ai_dir / "rounds").is_dir()
-        for role in ("orchestrator", "product", "developer", "reviewer"):
+        for role in ("orchestrator", "product", "developer"):
             assert (ai_dir / "workspaces" / role / "CLAUDE.md").exists()
+        assert not (ai_dir / "workspaces" / "reviewer").exists()
 
     def test_init_rejects_existing(self, tmp_project: Path):
         (tmp_project / ".ai-loop").mkdir()

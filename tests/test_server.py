@@ -18,9 +18,11 @@ class TestDevServer:
             log_path=log_file,
         )
 
+    @patch("ai_loop.server.subprocess.run")
     @patch("ai_loop.server.subprocess.Popen")
     @patch("ai_loop.server.requests.get")
-    def test_start_waits_for_health(self, mock_get, mock_popen, tmp_path: Path):
+    def test_start_waits_for_health(self, mock_get, mock_popen, mock_run, tmp_path: Path):
+        mock_run.return_value = MagicMock(stdout="")
         mock_process = MagicMock()
         mock_process.poll.return_value = None
         mock_popen.return_value = mock_process
@@ -46,9 +48,11 @@ class TestDevServer:
         mock_process.send_signal.assert_called_once()
         mock_process.wait.assert_called_once_with(timeout=10)
 
+    @patch("ai_loop.server.subprocess.run")
     @patch("ai_loop.server.subprocess.Popen")
     @patch("ai_loop.server.requests.get")
-    def test_start_timeout_raises(self, mock_get, mock_popen, tmp_path: Path):
+    def test_start_timeout_raises(self, mock_get, mock_popen, mock_run, tmp_path: Path):
+        mock_run.return_value = MagicMock(stdout="")
         mock_process = MagicMock()
         mock_process.poll.return_value = None
         mock_popen.return_value = mock_process
@@ -62,9 +66,11 @@ class TestDevServer:
         server = self.make_server(tmp_path)
         server.stop()  # should not raise
 
+    @patch("ai_loop.server.subprocess.run")
     @patch("ai_loop.server.subprocess.Popen")
     @patch("ai_loop.server.requests.get")
-    def test_start_detects_process_crash(self, mock_get, mock_popen, tmp_path: Path):
+    def test_start_detects_process_crash(self, mock_get, mock_popen, mock_run, tmp_path: Path):
+        mock_run.return_value = MagicMock(stdout="")
         mock_process = MagicMock()
         mock_process.poll.return_value = 1  # exited with error
         mock_popen.return_value = mock_process
@@ -72,3 +78,24 @@ class TestDevServer:
         server = self.make_server(tmp_path)
         with pytest.raises(RuntimeError, match="退出"):
             server.start()
+
+    @patch("ai_loop.server.os.kill")
+    @patch("ai_loop.server.subprocess.run")
+    def test_kill_port_holders(self, mock_run, mock_kill, tmp_path: Path):
+        mock_run.return_value = MagicMock(stdout="12345\n67890\n")
+
+        server = self.make_server(tmp_path)
+        server._kill_port_holders()
+
+        mock_run.assert_called_once_with(
+            ["lsof", "-ti", ":12345"],
+            capture_output=True, text=True, timeout=5,
+        )
+        assert mock_kill.call_count == 2
+
+    @patch("ai_loop.server.subprocess.run")
+    def test_kill_port_holders_no_occupants(self, mock_run, tmp_path: Path):
+        mock_run.return_value = MagicMock(stdout="")
+
+        server = self.make_server(tmp_path)
+        server._kill_port_holders()  # should not raise

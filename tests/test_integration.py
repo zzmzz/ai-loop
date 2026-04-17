@@ -45,7 +45,7 @@ def full_project(tmp_path: Path) -> Path:
     }))
 
     workspaces = ai_dir / "workspaces"
-    for role in ("orchestrator", "product", "developer", "reviewer"):
+    for role in ("orchestrator", "product", "developer"):
         ws = workspaces / role
         ws.mkdir(parents=True)
         (ws / "CLAUDE.md").write_text(f"# Role: {role}\n\n## 累积记忆\n")
@@ -90,13 +90,11 @@ class TestIntegration:
                 raw = " ".join(captured_input)
                 is_brain = any(dp in raw for dp in (
                     "post_requirement", "post_design", "post_implementation",
-                    "post_review", "post_acceptance", "round_summary",
+                    "post_acceptance", "round_summary",
                 ))
                 if is_brain:
                     if "post_acceptance" in raw:
                         result = '{"decision": "PASS", "reason": "ok"}'
-                    elif "post_review" in raw:
-                        result = '{"decision": "APPROVE", "reason": "ok"}'
                     elif "round_summary" in raw:
                         result = '{"decision": "PASS", "reason": "ok", "details": "Round completed"}'
                     else:
@@ -125,7 +123,7 @@ class TestIntegration:
         assert len(state.history) == 1
 
         # Memory should be updated
-        for role in ("product", "developer", "reviewer"):
+        for role in ("product", "developer"):
             claude_md = ai_dir / "workspaces" / role / "CLAUDE.md"
             assert "Round 001" in claude_md.read_text()
 

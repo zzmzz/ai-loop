@@ -2,7 +2,7 @@
 
 > 源文件：`ai_loop/orchestrator.py`
 
-Orchestrator 是 AI Loop 的核心调度器，驱动一轮完整的 需求→设计→实现→审查→验收 流程。
+Orchestrator 是 AI Loop 的核心调度器，驱动一轮完整的 需求→设计→实现→测试验收 四阶段流程。
 
 ## 初始化
 
@@ -16,12 +16,12 @@ Orchestrator(ai_loop_dir: Path, verbose: bool = False,
 2. 加载 `state.json` → `LoopState`
 3. 创建 `MemoryManager`、`ContextCollector`
 4. 创建 `EventLogger`（`ai_loop_dir / "logs"`，文件名随当前轮次 `round-NNN.jsonl`），用于记录本轮编排事件
-5. 确保 4 个工作空间目录存在（orchestrator/product/developer/reviewer），从 `templates/` 复制或刷新各角色 `CLAUDE.md`；确保 `.ai-loop/product-knowledge/` 存在
+5. 确保 3 个工作空间目录存在（orchestrator/product/developer），从 `templates/` 复制或刷新各角色 `CLAUDE.md`；确保 `.ai-loop/product-knowledge/` 存在
    - 若 `state.json` 中的 `ai_loop_version` 与当前安装的 `ai_loop.__version__` 不一致，则用包内模板替换 `## 累积记忆` **之前** 的正文，**不覆盖**累积记忆段落；随后把新版本写回 `state.json`
    - `ai-loop init` 写入的初始状态会带上当前包版本，便于首轮即记录基线
 6. 按配置决定是否创建 `DevServer`（web 项目需要，cli/library 不需要）
 7. 创建 `Brain`（使用 orchestrator 工作空间）
-8. 创建三角色实例和对应的 `RoleRunner`（工具权限各不同）
+8. 创建双角色实例和对应的 `RoleRunner`（工具权限各不同）
 
 ### 工具权限分配
 
@@ -29,7 +29,6 @@ Orchestrator(ai_loop_dir: Path, verbose: bool = False,
 |------|-----------|
 | product | Read, Glob, Grep, Bash, Write |
 | developer | Read, Glob, Grep, Edit, Write, Bash, Skill, Agent |
-| reviewer | Read, Glob, Grep, Bash |
 | brain | （无工具，纯推理） |
 
 ## run_single_round() 流程
@@ -63,48 +62,29 @@ Product 探索时会自动注入 `product-knowledge/index.md`（如存在）与 
 | `e` | 暂停流程，用户手动编辑 requirement.md 后按回车继续 |
 | `r` | 全部拒绝，删除 requirement.md 并让 Product 重新生成 |
 
-### 阶段 2：技术设计
+### 阶段 2：开发（设计 + 实现，单 session）
 
 ```
-_call_role("developer:design", ...)      ← Developer 写 design.md
+_call_role("developer:develop", ...)     ← Developer 在同一 session 中完成设计 + 实现
                                             （自动注入 requirement.md）
-_ask_brain("post_design", ...)           ← Brain 判断设计是否合理
+                                            根据需求规模自动选择路径：
+                                            - Sketch 路径：/sdd:sketch → 确认 → 直接实现
+                                            - Specify 路径：/sdd:specify → plan → tasks → implement
+                                              每步通过 {"needs_input": true} 暂停等待人工确认
+                                            产出 design.md + dev-log.md
+_ask_brain("post_development", ...)      ← Brain 判断设计与实现是否完整
   PROCEED → 继续
-  CLARIFY → Product 回答问题 → Developer 重新设计
-  REDO    → Developer 重新设计
+  RETRY   → Developer 重新开发
 ```
 
-### 阶段 3：TDD 实现
-
-```
-_call_role("developer:implement", ...)   ← Developer 写代码 + dev-log.md
-                                            （自动注入 design.md + clarification.md）
-_ask_brain("post_implementation", ...)   ← Brain 判断实现是否完整
-  PROCEED → 继续
-  RETRY   → Developer 补完
-```
-
-### 阶段 4：代码审查（循环，最多 max_review_retries 轮）
+### 阶段 4：QA 测试验收（循环，最多 max_acceptance_retries 轮）
 
 ```
 _server_start()
-for attempt in range(max_review + 1):
-    _call_role("reviewer:review", ...)   ← Reviewer 审查
-                                            （自动注入 requirement + design + dev-log）
-    _ask_brain("post_review", ...)       ← Brain 评估审查结果
-      APPROVE / SKIP_MINOR → 跳出循环
-      ESCALATE             → 返回 ESCALATE
-      REWORK               → Developer 修复 + 验证 → 下一轮审查
-超过次数 → ESCALATE
-```
-
-### 阶段 5：产品验收（循环，最多 max_acceptance_retries 轮）
-
-```
 for attempt in range(max_accept + 1):
-    _call_role("product:acceptance", ...) ← Product 验收
-                                             （自动注入 requirement + dev-log）
-    _ask_brain("post_acceptance", ...)    ← Brain 评估验收结果
+    _call_role("product:qa_acceptance", ...) ← Product（QA 模式）测试 + 验收
+                                                （自动注入 requirement + dev-log）
+    _ask_brain("post_acceptance", ...)       ← Brain 评估验收结果
       PASS / PARTIAL_OK → 跳出循环
       ESCALATE          → 返回 ESCALATE
       FAIL_IMPL         → 停 Server → Developer 修复 → 启 Server → 重新验收
@@ -113,7 +93,9 @@ for attempt in range(max_accept + 1):
 _server_stop()
 ```
 
-### 阶段 6：轮次收尾
+Product 在 qa_acceptance 阶段同时执行系统化 QA 测试和需求验收，输出包含需求验证结果、探索发现、健康评分和总判定。
+
+### 阶段 5：轮次收尾
 
 ```
 Brain.round_summary(...)                 ← 生成角色专属记忆
@@ -197,7 +179,7 @@ def _call_role(self, role_phase, rnd, round_dir, goals):
 
 仅 web 项目（`config.server` 非空）需要 Server：
 
-- **启动时机**：需求探索前、审查循环开始前、验收失败后重新验收前
+- **启动时机**：需求探索前、QA 验收循环开始前、验收失败后重新验收前
 - **停止时机**：需求探索后、验收失败需要开发修复前、轮次结束后
 - **健康检查**：HTTP GET `health_url`，轮询直到 200 或超时
 - **停止策略**：先 SIGTERM，等 10s；超时则 SIGKILL，等 5s

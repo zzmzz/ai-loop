@@ -9,7 +9,7 @@
 | [系统架构](architecture.md) | 总体设计、组件关系、数据流 | 想理解全局的人 |
 | [编排引擎](orchestration.md) | Orchestrator 完整流程、重试/升级/协作机制 | 想改编排逻辑的人 |
 | [决策系统](brain.md) | Brain 6 个决策点、输入输出、JSON schema | 想调整决策逻辑的人 |
-| [角色系统](roles.md) | RoleRunner + 三角色（Product/Developer/Reviewer）| 想改角色行为的人 |
+| [角色系统](roles.md) | RoleRunner + 双角色（Product/Developer）| 想改角色行为的人 |
 | [记忆与上下文](memory-context.md) | 累积记忆、滑动窗口压缩、ContextCollector 依赖图 | 想理解跨轮次连续性的人 |
 | [配置参考](config-reference.md) | config.yaml 全字段说明、三种项目类型配置示例 | 想用 AI Loop 的人 |
 | [开发指南](development.md) | 开发环境、测试规范、模块改动注意事项、发版流程 | 想贡献代码的人 |
@@ -39,9 +39,8 @@ ai_loop/
 ├── state.py            → 轮次/阶段/重试状态
 ├── roles/
 │   ├── base.py         → RoleRunner 基类（见 roles.md）
-│   ├── product.py      → 产品经理角色
-│   ├── developer.py    → 开发者角色
-│   └── reviewer.py     → 审查者角色
+│   ├── product.py      → 产品经理 + QA 角色
+│   └── developer.py    → 开发者角色
 └── templates/          → 角色 CLAUDE.md 模板
 ```
 
@@ -64,8 +63,7 @@ ai_loop/
 │   │   ├── design.md            #   Developer 输出的技术设计
 │   │   ├── clarification.md     #   Product 回答的澄清（可选，仅 CLARIFY 流程产生）
 │   │   ├── dev-log.md           #   Developer 输出的开发日志
-│   │   ├── review.md            #   Reviewer 输出的审查报告
-│   │   └── acceptance.md        #   Product 输出的验收结果
+│   │   └── acceptance.md        #   Product 输出的 QA 测试 + 验收结果
 │   └── 002/
 │       └── ...
 │
@@ -78,9 +76,7 @@ ai_loop/
     ├── developer/
     │   ├── CLAUDE.md            #   开发者上下文 + 累积记忆
     │   └── notes/
-    └── reviewer/
-        ├── CLAUDE.md            #   审查者上下文 + 累积记忆
-        └── notes/
+    └── (reviewer/ 已废弃，不再创建)
 ```
 
 **何时需要关注此目录**：

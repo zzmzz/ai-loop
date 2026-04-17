@@ -37,26 +37,30 @@ class TestContextCollector:
 
         assert result == ""
 
-    def test_collect_includes_multiple_deps(self, tmp_path: Path):
+    def test_qa_acceptance_includes_requirement_and_dev_log(self, tmp_path: Path):
+        """product:qa_acceptance should depend on requirement.md and dev-log.md."""
         (tmp_path / "requirement.md").write_text("req content")
-        (tmp_path / "design.md").write_text("design content")
-
-        collector = ContextCollector()
-        result = collector.collect("reviewer:review", tmp_path)
-
-        assert "requirement.md" in result
-        assert "req content" in result
-        assert "design.md" in result
-        assert "design content" in result
-
-    def test_reviewer_review_includes_dev_log(self, tmp_path: Path):
-        """REQ-1: reviewer:review should depend on dev-log.md."""
-        (tmp_path / "requirement.md").write_text("req")
-        (tmp_path / "design.md").write_text("design")
         (tmp_path / "dev-log.md").write_text("dev log content")
 
         collector = ContextCollector()
-        result = collector.collect("reviewer:review", tmp_path)
+        result = collector.collect("product:qa_acceptance", tmp_path)
 
+        assert "requirement.md" in result
+        assert "req content" in result
         assert "dev-log.md" in result
         assert "dev log content" in result
+
+    def test_develop_includes_requirement(self, tmp_path: Path):
+        """developer:develop should depend on requirement.md."""
+        (tmp_path / "requirement.md").write_text("req content for develop")
+
+        collector = ContextCollector()
+        result = collector.collect("developer:develop", tmp_path)
+
+        assert "requirement.md" in result
+        assert "req content for develop" in result
+
+    def test_reviewer_review_no_longer_in_phase_deps(self, tmp_path: Path):
+        collector = ContextCollector()
+        result = collector.collect("reviewer:review", tmp_path)
+        assert result == ""
