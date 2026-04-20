@@ -3,7 +3,7 @@
         "context-hub/sdd": {
                 "enabled": true,
                 "gitUrl": "git@gitlab.yangqianguan.com:ai/context-hub.git",
-                "gitRef": "master",
+                "gitRef": "feat/implement-dev-review-loop",
                 "gitPath": "plugins/sdd"
         }
     }
